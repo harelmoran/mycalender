@@ -874,7 +874,7 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove("show"), 6000);
+  toastTimer = setTimeout(() => t.classList.remove("show"), msg.length > 40 ? 10000 : 6000);
 }
 
 // ===== Google Calendar sync =====
@@ -980,7 +980,15 @@ async function googleApiFetch(url, options={}, retried=false) {
     showToast("החיבור ל-Google פג — יש להתחבר מחדש");
     throw new Error("unauthorized");
   }
-  if (!res.ok) throw new Error("Google API error " + res.status);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errBody = await res.json();
+      detail = (errBody && errBody.error && (errBody.error.message || errBody.error)) || "";
+      if (typeof detail !== "string") detail = JSON.stringify(detail);
+    } catch(e) {}
+    throw new Error("Google API error " + res.status + (detail ? ": " + detail : ""));
+  }
   return res.status === 204 ? null : res.json();
 }
 
@@ -1024,14 +1032,20 @@ async function pushCreateToGoogle(e) {
     const created = await googleApiFetch(GOOGLE_API_BASE, { method: "POST", body: JSON.stringify(eventToGooglePayload(e)) });
     e.googleEventId = created.id;
     persist();
-  } catch(err) { showToast("שגיאה ביצירת האירוע ב-Google"); }
+  } catch(err) {
+    console.error("Google create error:", err);
+    showToast("שגיאה ביצירת האירוע ב-Google: " + (err.message || "לא ידוע"));
+  }
 }
 async function pushUpdateToGoogle(e) {
   if (!googleConnected) return;
   if (!e.googleEventId) { pushCreateToGoogle(e); return; }
   try {
     await googleApiFetch(`${GOOGLE_API_BASE}/${e.googleEventId}`, { method: "PATCH", body: JSON.stringify(eventToGooglePayload(e)) });
-  } catch(err) { showToast("שגיאה בעדכון האירוע ב-Google"); }
+  } catch(err) {
+    console.error("Google update error:", err);
+    showToast("שגיאה בעדכון האירוע ב-Google: " + (err.message || "לא ידוע"));
+  }
 }
 async function pushDeleteToGoogle(e) {
   if (!googleConnected || !e.googleEventId) return;
