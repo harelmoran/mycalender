@@ -655,27 +655,53 @@ document.getElementById("scanImageInput").addEventListener("change", async (evt)
   if (!file) return;
   showToast("מנתח את התמונה... זה עשוי לקחת כמה שניות");
   try {
-    const base64 = await fileToBase64(file);
+    const { base64, mimeType } = await resizeImageForUpload(file);
     const res = await fetch("/api/parse-event", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: base64, mimeType: file.type || "image/jpeg" })
+      body: JSON.stringify({ image: base64, mimeType })
     });
-    const data = await res.json();
-    if (!res.ok) { showToast(data.error || "ניתוח התמונה נכשל"); return; }
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      throw new Error("תשובה לא תקינה מהשרת (סטטוס " + res.status + ")");
+    }
+    if (!res.ok) { showToast(data.error || ("ניתוח נכשל (סטטוס " + res.status + ")")); return; }
     openAddFromParsed(data);
     showToast("זוהו פרטים מהתמונה — בדוק ותקן לפני שמירה");
   } catch (err) {
-    showToast("ניתוח התמונה נכשל, נסה שוב או הזן ידנית");
+    showToast("ניתוח נכשל: " + (err.message || "שגיאה לא ידועה"));
   }
 });
 
-function fileToBase64(file) {
+function resizeImageForUpload(file, maxDim, quality) {
+  maxDim = maxDim || 1600;
+  quality = quality || 0.82;
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let width = img.naturalWidth, height = img.naturalHeight;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else { width = Math.round(width * maxDim / height); height = maxDim; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => {
+        if (!blob) { reject(new Error("כשל בכיווץ התמונה")); return; }
+        const reader = new FileReader();
+        reader.onload = () => resolve({ base64: String(reader.result).split(",")[1], mimeType: "image/jpeg" });
+        reader.onerror = () => reject(new Error("כשל בקריאת התמונה"));
+        reader.readAsDataURL(blob);
+      }, "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("כשל בטעינת התמונה")); };
+    img.src = url;
   });
 }
 
