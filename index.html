@@ -245,6 +245,7 @@ const REDIRECT_URI = window.location.origin + window.location.pathname;
 
 let googleAccessToken = null;
 let googleConnected = false;
+let syncInFlight = false;
 
 const STORAGE_KEY = "calendar_events_v1";
 let events = [];
@@ -1056,7 +1057,8 @@ async function pushDeleteToGoogle(e) {
 }
 
 async function syncFromGoogle() {
-  if (!googleConnected) return;
+  if (!googleConnected || syncInFlight) return;
+  syncInFlight = true;
   try {
     const rangeStart = new Date(viewYear, viewMonth-2, 1);
     const rangeEnd = new Date(viewYear, viewMonth+1, 0);
@@ -1080,7 +1082,19 @@ async function syncFromGoogle() {
     });
     if (changed) { persist(); renderCalendar(); renderAgenda(); }
   } catch(err) { /* errors already surfaced via googleApiFetch */ }
+  finally { syncInFlight = false; }
 }
+
+// Pull fresh events automatically: whenever the app regains focus (e.g. switching
+// back from another app, or coming back to the browser tab), and periodically
+// while it stays open — so changes made on another device show up without
+// needing to manually navigate months.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") syncFromGoogle();
+});
+window.addEventListener("focus", () => syncFromGoogle());
+setInterval(() => { if (document.visibilityState === "visible") syncFromGoogle(); }, 45000);
+
 
 // ---- .ics export ----
 // ---- Send by email ----
