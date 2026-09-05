@@ -55,6 +55,7 @@
   .event-location { font-size:11px; color: var(--muted); margin-top:2px; }
   .empty-note { text-align:center; color: var(--muted); font-size:13px; margin: 30px 0; }
   .fab { position:fixed; left:50%; transform:translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom)); background: var(--gold); color:#1b1406; border:none; border-radius:999px; padding:14px 28px; font-size:15px; font-weight:800; box-shadow:0 8px 20px rgba(0,0,0,.4); cursor:pointer; }
+  .fab-secondary { left:auto; right: calc(16px + env(safe-area-inset-right)); transform:none; width:50px; height:50px; padding:0; font-size:22px; background: var(--surface2); color: var(--ink); border:1px solid var(--surface); }
   .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:50; align-items:flex-end; justify-content:center; }
   .overlay.show, .overlay.closing { display:flex; }
   .overlay.show { animation: overlayFadeIn .18s ease; }
@@ -74,8 +75,14 @@
   .modal textarea { min-height:80px; resize:vertical; line-height:1.5; }
   .time-row { display:flex; gap:10px; }
   .time-row > div { flex:1; }
-  .allday-row { display:flex; align-items:center; gap:8px; margin-top:12px; font-size:14px; }
+  .allday-row { display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:14px; font-size:14px; }
   .allday-row input { width:auto; }
+  .datetime-row { display:flex; align-items:stretch; background: var(--surface2); border:1px solid var(--surface2); border-radius:10px; overflow:hidden; margin-bottom:12px; }
+  .modal .datetime-row input[type=date], .modal .datetime-row input[type=time] {
+    flex:1; width:auto; min-width:0; border:none; background:transparent; border-radius:0; margin:0; padding:11px 8px; text-align:center;
+  }
+  .dt-divider { width:1px; align-self:stretch; margin:8px 0; background: rgba(156,163,175,0.25); }
+  .datetime-row.no-time .dt-divider, .datetime-row.no-time .dt-time { display:none; }
   .color-row { display:flex; gap:10px; margin-top:6px; }
   .color-swatch { width:30px; height:30px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
   .location-row { display:flex; gap:8px; align-items:center; }
@@ -106,8 +113,8 @@
   .week-strip .wd-cell .wd-num { font-size:15px; font-weight:700; width:30px; height:30px; line-height:30px; margin:0 auto; border-radius:50%; }
   .week-strip .wd-cell.selected .wd-num { background: var(--gold); color:#1b1406; }
   .week-strip .wd-cell.is-today:not(.selected) .wd-num { box-shadow: inset 0 0 0 1.5px var(--gold); }
-  .day-view-content { flex:1; overflow-y:auto; padding: 0 0 calc(90px + env(safe-area-inset-bottom)); touch-action: pan-y; }
-  .allday-row { display:flex; flex-wrap:wrap; gap:6px; margin: 0 16px 8px; }
+  .day-view-content { flex:1; overflow-y:auto; padding: 0 0 calc(20px + env(safe-area-inset-bottom)); touch-action: pan-y; }
+  .allday-chips-row { display:flex; flex-wrap:wrap; gap:6px; margin: 0 16px 8px; }
   .allday-chip { font-size:12px; font-weight:700; padding:5px 10px; border-radius:8px; color:#fff; }
   .timeline-wrap { position:relative; height: 1440px; margin: 0 16px; transition: opacity .12s ease; }
   .anim-next { animation: slideInLeft .22s ease; }
@@ -116,7 +123,7 @@
   @keyframes slideInRight { from { transform: translateX(-24px); opacity:0; } to { transform:none; opacity:1; } }
   .timeline-grid { position:absolute; inset:0; }
   .hour-line { position:absolute; left:0; right:56px; height:0; border-top:1px solid var(--surface2); }
-  .hour-label { position:absolute; top:-8px; right:0; font-size:11px; color: var(--muted); background: var(--bg); padding: 0 2px; }
+  .hour-label { position:absolute; right:2px; font-size:11px; color: var(--muted); background: var(--bg); padding: 0 2px; z-index:1; }
   .half-line { position:absolute; left:0; right:56px; height:0; border-top:1px solid rgba(156,163,175,0.15); }
   .timeline-events { position:absolute; top:0; left:0; right:58px; bottom:0; }
   .timeline-event { position:absolute; border-radius:8px; padding:4px 8px; overflow:hidden; cursor:pointer; box-sizing:border-box; }
@@ -160,7 +167,7 @@
   <div class="agenda-head">
     <h2 id="agendaLabel"></h2>
   </div>
-  <div class="allday-row" id="allDayRow" style="display:none;"></div>
+  <div class="allday-chips-row" id="allDayRow" style="display:none;"></div>
   <div class="day-view-content" id="dayViewContent">
     <div class="timeline-wrap" id="timelineWrap">
       <div class="timeline-grid" id="timelineGrid"></div>
@@ -171,6 +178,8 @@
 </div>
 
 <button class="fab" id="addBtn">+ אירוע חדש</button>
+<button class="fab fab-secondary" id="scanImageBtn" title="הוספה מתמונה">📷</button>
+<input type="file" id="scanImageInput" accept="image/*" style="display:none;">
 
 <div class="overlay" id="formOverlay">
   <div class="modal">
@@ -180,15 +189,21 @@
     </div>
     <label>כותרת</label>
     <input type="text" id="formTitle" placeholder="שם האירוע">
-    <label>תאריך</label>
-    <input type="date" id="formDate">
     <div class="allday-row">
       <input type="checkbox" id="formAllDay">
       <label for="formAllDay" style="margin:0;">כל היום</label>
     </div>
-    <div class="time-row" id="timeRow">
-      <div><label>שעת התחלה</label><input type="time" id="formStart"></div>
-      <div><label>שעת סיום</label><input type="time" id="formEnd"></div>
+    <label>מתחיל</label>
+    <div class="datetime-row" id="startDateTimeRow">
+      <input type="date" id="formDate" class="dt-date">
+      <div class="dt-divider" id="startDivider"></div>
+      <input type="time" id="formStart" class="dt-time">
+    </div>
+    <label>מסתיים</label>
+    <div class="datetime-row" id="endDateTimeRow">
+      <input type="date" id="formEndDate" class="dt-date">
+      <div class="dt-divider" id="endDivider"></div>
+      <input type="time" id="formEnd" class="dt-time">
     </div>
     <label>צבע</label>
     <div class="color-row" id="colorRow"></div>
@@ -298,7 +313,7 @@ function renderCalendar() {
     cellDate.setDate(gridStart.getDate() + i);
     const iso = toISO(cellDate);
     const inMonth = cellDate.getMonth() === viewMonth - 1;
-    const dayEvents = events.filter(e => e.date === iso).sort(sortEvents);
+    const dayEvents = events.filter(e => eventOccursOn(e, iso)).sort(sortEvents);
     const dots = dayEvents.slice(0,4).map(e => `<span class="day-dot" style="background:${colorValue(e.color)};"></span>`).join("");
     const more = dayEvents.length > 4 ? `<div class="day-more">+${dayEvents.length-4}</div>` : "";
     html += `<div class="day-cell ${inMonth?"":"out-month"} ${iso===selectedDate?"selected":""} ${iso===todayISO?"is-today":""}" data-date="${iso}">
@@ -325,6 +340,24 @@ function sortEvents(a, b) {
   if (!a.allDay && b.allDay) return 1;
   return (a.startTime||"").localeCompare(b.startTime||"");
 }
+function eventEndDate(e) { return e.endDate || e.date; }
+function eventOccursOn(e, iso) { return iso >= e.date && iso <= eventEndDate(e); }
+function getDaySegment(e, iso) {
+  const endDate = eventEndDate(e);
+  const isFirst = iso === e.date;
+  const isLast = iso === endDate;
+  const startMin = isFirst ? timeToMinutes(e.startTime) : 0;
+  let endMin = isLast ? (e.endTime ? timeToMinutes(e.endTime) : startMin + 30) : 1440;
+  if (endMin <= startMin) endMin = startMin + 30;
+  return { start: startMin, end: endMin, isFirst, isLast };
+}
+function segmentLabel(e, iso) {
+  const seg = getDaySegment(e, iso);
+  if (seg.isFirst && seg.isLast) return (e.startTime||"") + (e.endTime ? " - " + e.endTime : "");
+  if (seg.isFirst) return (e.startTime||"") + " ←";
+  if (seg.isLast) return "← " + (e.endTime||"");
+  return "אירוע מתמשך";
+}
 
 function formatAgendaLabel(iso) {
   const [y,m,d] = iso.split("-").map(Number);
@@ -333,13 +366,13 @@ function formatAgendaLabel(iso) {
 
 function renderMonthAgenda() {
   document.getElementById("monthAgendaLabel").textContent = formatAgendaLabel(selectedDate);
-  const list = events.filter(e => e.date === selectedDate).sort(sortEvents);
+  const list = events.filter(e => eventOccursOn(e, selectedDate)).sort(sortEvents);
   document.getElementById("monthEmptyNote").style.display = list.length === 0 ? "block" : "none";
   const wrap = document.getElementById("monthAgendaList");
   wrap.innerHTML = list.map(e => `
     <div class="event-item" data-id="${e.id}">
       <div class="event-color-bar" style="background:${colorValue(e.color)};"></div>
-      <div class="event-time">${e.allDay ? "כל היום" : (e.startTime || "") + (e.endTime ? " - " + e.endTime : "")}</div>
+      <div class="event-time">${e.allDay ? "כל היום" : segmentLabel(e, selectedDate)}</div>
       <div style="flex:1;">
         <div class="event-title">${escapeHtml(e.title)}</div>
         ${e.location ? `<div class="event-location">📍 ${escapeHtml(e.location)}</div>` : ""}
@@ -356,7 +389,7 @@ const HOUR_H = 60;
 
 function renderAgenda() {
   document.getElementById("agendaLabel").textContent = formatAgendaLabel(selectedDate);
-  const list = events.filter(e => e.date === selectedDate).sort(sortEvents);
+  const list = events.filter(e => eventOccursOn(e, selectedDate)).sort(sortEvents);
   const allDayEvents = list.filter(e => e.allDay);
   const timedEvents = list.filter(e => !e.allDay);
 
@@ -406,8 +439,9 @@ function renderTimelineGrid() {
   const grid = document.getElementById("timelineGrid");
   let html = "";
   for (let h = 0; h < 24; h++) {
-    html += `<div class="hour-line" style="top:${h*HOUR_H}px;"><span class="hour-label">${h}:00</span></div>`;
-    if (h < 24) html += `<div class="half-line" style="top:${h*HOUR_H + HOUR_H/2}px;"></div>`;
+    html += `<div class="hour-line" style="top:${h*HOUR_H}px;"></div>`;
+    html += `<span class="hour-label" style="top:${h*HOUR_H - 8}px;">${h}:00</span>`;
+    html += `<div class="half-line" style="top:${h*HOUR_H + HOUR_H/2}px;"></div>`;
   }
   grid.innerHTML = html;
 }
@@ -415,10 +449,8 @@ function renderTimelineGrid() {
 function renderTimelineEvents(timedEvents) {
   const wrap = document.getElementById("timelineEvents");
   const withTimes = timedEvents.map(e => {
-    const start = timeToMinutes(e.startTime);
-    let end = e.endTime ? timeToMinutes(e.endTime) : start + 30;
-    if (end <= start) end = start + 30;
-    return { e, start, end };
+    const seg = getDaySegment(e, selectedDate);
+    return { e, start: seg.start, end: seg.end };
   }).sort((a,b) => a.start - b.start || a.end - b.end);
 
   // simple column assignment for overlapping events
@@ -443,7 +475,7 @@ function renderTimelineEvents(timedEvents) {
     const leftPct = col * widthPct;
     return `<div class="timeline-event" data-id="${e.id}" style="top:${top}px; height:${height}px; right:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); background:${colorValue(e.color)};">
       <div class="te-title">${escapeHtml(e.title)}</div>
-      <div class="te-time">${(e.startTime||"")}${e.endTime ? " - " + e.endTime : ""}</div>
+      <div class="te-time">${segmentLabel(e, selectedDate)}</div>
       ${e.location && height > 40 ? `<div class="te-time">📍 ${escapeHtml(e.location)}</div>` : ""}
     </div>`;
   }).join("");
@@ -545,9 +577,15 @@ document.getElementById("dayViewAdd").addEventListener("click", openAdd);
 
 function updateAllDayUI() {
   const isAllDay = document.getElementById("formAllDay").checked;
-  document.getElementById("timeRow").style.display = isAllDay ? "none" : "flex";
+  document.getElementById("startDateTimeRow").classList.toggle("no-time", isAllDay);
+  document.getElementById("endDateTimeRow").classList.toggle("no-time", isAllDay);
 }
 document.getElementById("formAllDay").addEventListener("change", updateAllDayUI);
+document.getElementById("formDate").addEventListener("change", () => {
+  const startVal = document.getElementById("formDate").value;
+  const endEl = document.getElementById("formEndDate");
+  if (!endEl.value || endEl.value < startVal) endEl.value = startVal;
+});
 
 function selectColor(key) {
   selectedColor = key;
@@ -572,6 +610,7 @@ function openAdd() {
   document.getElementById("formTitleHead").textContent = "אירוע חדש";
   document.getElementById("formTitle").value = "";
   document.getElementById("formDate").value = selectedDate;
+  document.getElementById("formEndDate").value = selectedDate;
   document.getElementById("formAllDay").checked = false;
   const defaults = nearestRoundHourTimes();
   document.getElementById("formStart").value = defaults.start;
@@ -592,6 +631,7 @@ function openEdit(id) {
   document.getElementById("formTitleHead").textContent = "עריכת אירוע";
   document.getElementById("formTitle").value = e.title;
   document.getElementById("formDate").value = e.date;
+  document.getElementById("formEndDate").value = e.endDate || e.date;
   document.getElementById("formAllDay").checked = !!e.allDay;
   document.getElementById("formStart").value = e.startTime || "";
   document.getElementById("formEnd").value = e.endTime || "";
@@ -606,6 +646,57 @@ function openEdit(id) {
 }
 
 document.getElementById("addBtn").addEventListener("click", openAdd);
+
+// ---- Add event from image (Gemini-powered) ----
+document.getElementById("scanImageBtn").addEventListener("click", () => document.getElementById("scanImageInput").click());
+document.getElementById("scanImageInput").addEventListener("change", async (evt) => {
+  const file = evt.target.files[0];
+  evt.target.value = "";
+  if (!file) return;
+  showToast("מנתח את התמונה... זה עשוי לקחת כמה שניות");
+  try {
+    const base64 = await fileToBase64(file);
+    const res = await fetch("/api/parse-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: base64, mimeType: file.type || "image/jpeg" })
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || "ניתוח התמונה נכשל"); return; }
+    openAddFromParsed(data);
+    showToast("זוהו פרטים מהתמונה — בדוק ותקן לפני שמירה");
+  } catch (err) {
+    showToast("ניתוח התמונה נכשל, נסה שוב או הזן ידנית");
+  }
+});
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function openAddFromParsed(p) {
+  openAdd();
+  if (p.title) document.getElementById("formTitle").value = p.title;
+  if (p.date) {
+    document.getElementById("formDate").value = p.date;
+    document.getElementById("formEndDate").value = p.endDate || p.date;
+    selectedDate = p.date;
+  }
+  if (p.allDay) {
+    document.getElementById("formAllDay").checked = true;
+  } else {
+    if (p.startTime) document.getElementById("formStart").value = p.startTime;
+    if (p.endTime) document.getElementById("formEnd").value = p.endTime;
+  }
+  if (p.location) document.getElementById("formLocation").value = p.location;
+  updateAllDayUI();
+}
+
 document.getElementById("closeForm").addEventListener("click", () => hideOverlay("formOverlay"));
 document.getElementById("formOverlay").addEventListener("click", (e) => { if (e.target.id === "formOverlay") hideOverlay("formOverlay"); });
 
@@ -618,6 +709,8 @@ document.getElementById("openMapBtn").addEventListener("click", () => {
 document.getElementById("formSubmit").addEventListener("click", () => {
   const title = document.getElementById("formTitle").value.trim();
   const date = document.getElementById("formDate").value;
+  const endDateInput = document.getElementById("formEndDate").value;
+  const endDate = endDateInput || date;
   const allDay = document.getElementById("formAllDay").checked;
   const startTime = document.getElementById("formStart").value;
   const endTime = document.getElementById("formEnd").value;
@@ -627,17 +720,18 @@ document.getElementById("formSubmit").addEventListener("click", () => {
 
   if (!title) { errEl.textContent = "נא להזין כותרת"; errEl.style.display = "block"; return; }
   if (!date) { errEl.textContent = "נא לבחור תאריך"; errEl.style.display = "block"; return; }
-  if (!allDay && startTime && endTime && endTime < startTime) { errEl.textContent = "שעת הסיום לפני שעת ההתחלה"; errEl.style.display = "block"; return; }
+  if (endDate < date) { errEl.textContent = "תאריך הסיום לפני תאריך ההתחלה"; errEl.style.display = "block"; return; }
+  if (!allDay && endDate === date && startTime && endTime && endTime < startTime) { errEl.textContent = "שעת הסיום לפני שעת ההתחלה"; errEl.style.display = "block"; return; }
 
   if (editingId) {
     const e = events.find(x => x.id === editingId);
-    e.title = title; e.date = date; e.allDay = allDay;
+    e.title = title; e.date = date; e.endDate = endDate; e.allDay = allDay;
     e.startTime = allDay ? "" : startTime; e.endTime = allDay ? "" : endTime;
     e.notes = notes; e.color = selectedColor; e.location = location;
     persist();
     pushUpdateToGoogle(e);
   } else {
-    const newEvent = { id: uid(), title, date, allDay, startTime: allDay?"":startTime, endTime: allDay?"":endTime, notes, location, color: selectedColor, createdAt: Date.now() };
+    const newEvent = { id: uid(), title, date, endDate, allDay, startTime: allDay?"":startTime, endTime: allDay?"":endTime, notes, location, color: selectedColor, createdAt: Date.now() };
     events.push(newEvent);
     persist();
     pushCreateToGoogle(newEvent);
@@ -822,31 +916,36 @@ async function googleApiFetch(url, options={}, retried=false) {
 
 function eventToGooglePayload(e) {
   const base = { summary: e.title || "", description: e.notes || "", location: e.location || "" };
+  const endDate = eventEndDate(e);
   if (e.allDay) {
-    return { ...base, start: { date: e.date }, end: { date: addDaysISO(e.date, 1) } };
+    return { ...base, start: { date: e.date }, end: { date: addDaysISO(endDate, 1) } };
   }
   return {
     ...base,
     start: { dateTime: `${e.date}T${e.startTime || "00:00"}:00` },
-    end: { dateTime: `${e.date}T${e.endTime || e.startTime || "00:00"}:00` }
+    end: { dateTime: `${endDate}T${e.endTime || e.startTime || "00:00"}:00` }
   };
 }
 
 function googleEventToLocal(gEv) {
   const isAllDay = !!(gEv.start && gEv.start.date);
-  let date, startTime = "", endTime = "";
+  let date, endDate, startTime = "", endTime = "";
   if (isAllDay) {
     date = gEv.start.date;
+    endDate = gEv.end && gEv.end.date ? isoAddDays(gEv.end.date, -1) : date;
+    if (endDate < date) endDate = date;
   } else {
     const startDt = new Date(gEv.start.dateTime);
     date = toISO(startDt);
     startTime = pad2(startDt.getHours()) + ":" + pad2(startDt.getMinutes());
+    endDate = date;
     if (gEv.end && gEv.end.dateTime) {
       const endDt = new Date(gEv.end.dateTime);
+      endDate = toISO(endDt);
       endTime = pad2(endDt.getHours()) + ":" + pad2(endDt.getMinutes());
     }
   }
-  return { googleEventId: gEv.id, title: gEv.summary || "(ללא כותרת)", date, allDay: isAllDay, startTime, endTime, notes: gEv.description || "", location: gEv.location || "", color: "steel" };
+  return { googleEventId: gEv.id, title: gEv.summary || "(ללא כותרת)", date, endDate, allDay: isAllDay, startTime, endTime, notes: gEv.description || "", location: gEv.location || "", color: "steel" };
 }
 
 async function pushCreateToGoogle(e) {
@@ -905,8 +1004,14 @@ document.getElementById("formEmail").addEventListener("click", () => {
   if (!e) return;
   const subject = encodeURIComponent(e.title || "אירוע ביומן");
   const lines = [];
-  lines.push("תאריך: " + formatAgendaLabel(e.date));
+  const endDate = eventEndDate(e);
+  if (endDate !== e.date) {
+    lines.push("תאריך: " + formatAgendaLabel(e.date) + " עד " + formatAgendaLabel(endDate));
+  } else {
+    lines.push("תאריך: " + formatAgendaLabel(e.date));
+  }
   lines.push("שעה: " + (e.allDay ? "כל היום" : (e.startTime || "") + (e.endTime ? " - " + e.endTime : "")));
+  if (e.location) lines.push("מיקום: " + e.location);
   if (e.notes) { lines.push(""); lines.push(e.notes); }
   const body = encodeURIComponent(lines.join("\n"));
   window.location.href = `mailto:?subject=${subject}&body=${body}`;
