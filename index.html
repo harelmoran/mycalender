@@ -655,17 +655,27 @@ document.getElementById("scanImageInput").addEventListener("change", async (evt)
   const file = evt.target.files[0];
   evt.target.value = "";
   if (!file) return;
+  if (typeof Tesseract === "undefined") {
+    showToast("ספריית הזיהוי לא נטענה (בדוק חיבור לאינטרנט ורענן את הדף)");
+    return;
+  }
   showToast("סורק את התמונה... זה עשוי לקחת כמה שניות");
+  let worker;
   try {
     const blob = await resizeImageForOCR(file);
-    const { data } = await Tesseract.recognize(blob, "heb+eng");
+    worker = await Tesseract.createWorker("heb+eng");
+    const { data } = await worker.recognize(blob);
     const text = (data && data.text) || "";
     const parsed = parseEventFromText(text);
     openAddFromParsed(parsed);
     document.getElementById("formNotes").value = text.trim();
     showToast("זוהה טקסט מהתמונה — בדוק ותקן היטב לפני שמירה (זיהוי בסיסי, לא מושלם)");
   } catch (err) {
-    showToast("זיהוי הטקסט נכשל: " + (err.message || "שגיאה לא ידועה"));
+    console.error("OCR error:", err);
+    const msg = (err && (err.message || String(err))) || "שגיאה לא ידועה";
+    showToast("זיהוי הטקסט נכשל: " + msg);
+  } finally {
+    if (worker) { try { await worker.terminate(); } catch(e) {} }
   }
 });
 
