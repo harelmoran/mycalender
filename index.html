@@ -998,10 +998,11 @@ function eventToGooglePayload(e) {
   if (e.allDay) {
     return { ...base, start: { date: e.date }, end: { date: addDaysISO(endDate, 1) } };
   }
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Jerusalem";
   return {
     ...base,
-    start: { dateTime: `${e.date}T${e.startTime || "00:00"}:00` },
-    end: { dateTime: `${endDate}T${e.endTime || e.startTime || "00:00"}:00` }
+    start: { dateTime: `${e.date}T${e.startTime || "00:00"}:00`, timeZone },
+    end: { dateTime: `${endDate}T${e.endTime || e.startTime || "00:00"}:00`, timeZone }
   };
 }
 
