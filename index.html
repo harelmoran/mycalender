@@ -667,7 +667,7 @@ document.getElementById("scanImageInput").addEventListener("change", async (evt)
     worker = await Tesseract.createWorker("heb+eng");
     const { data } = await worker.recognize(blob);
     const text = (data && data.text) || "";
-    const parsed = parseEventFromText(text);
+    const parsed = parseEventFromText(text, data && data.blocks);
     openAddFromParsed(parsed);
     document.getElementById("formNotes").value = text.trim();
     showToast("זוהה טקסט מהתמונה — בדוק ותקן היטב לפני שמירה (זיהוי בסיסי, לא מושלם)");
@@ -707,7 +707,24 @@ function resizeImageForOCR(file, maxDim, quality) {
   });
 }
 
-function parseEventFromText(text) {
+function pickTitleByFontSize(blocks) {
+  let best = null, bestHeight = 0;
+  (blocks || []).forEach(block => {
+    (block.paragraphs || []).forEach(para => {
+      (para.lines || []).forEach(line => {
+        const txt = (line.text || "").trim();
+        const stripped = txt.replace(/[\d\/.\-:'"]/g, "").trim();
+        if (stripped.length < 3) return;
+        if (typeof line.confidence === "number" && line.confidence < 35) return;
+        const height = line.bbox ? (line.bbox.y1 - line.bbox.y0) : 0;
+        if (height > bestHeight) { bestHeight = height; best = txt; }
+      });
+    });
+  });
+  return best;
+}
+
+function parseEventFromText(text, blocks) {
   const result = { title: "", date: "", startTime: "", endTime: "", location: "" };
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 
@@ -735,10 +752,16 @@ function parseEventFromText(text) {
   if (timeMatches.length > 0) result.startTime = pad2(parseInt(timeMatches[0][1], 10)) + ":" + timeMatches[0][2];
   if (timeMatches.length > 1) result.endTime = pad2(parseInt(timeMatches[1][1], 10)) + ":" + timeMatches[1][2];
 
-  // title: first substantial line (not just digits/punctuation)
-  for (const line of lines) {
-    const stripped = line.replace(/[\d\/.\-:'"]/g, "").trim();
-    if (stripped.length >= 3) { result.title = line; break; }
+  // title: prefer the largest-font line on the page (event names are usually
+  // printed biggest on invitations) — falls back to first substantial line
+  const byFontSize = pickTitleByFontSize(blocks);
+  if (byFontSize) {
+    result.title = byFontSize;
+  } else {
+    for (const line of lines) {
+      const stripped = line.replace(/[\d\/.\-:'"]/g, "").trim();
+      if (stripped.length >= 3) { result.title = line; break; }
+    }
   }
 
   // location: line containing a common venue/address keyword
