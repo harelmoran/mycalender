@@ -8,8 +8,6 @@
 <meta name="apple-mobile-web-app-title" content="יומן">
 <meta name="theme-color" content="#1B2028">
 <title>יומן</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root {
     --bg: #12151c;
@@ -650,33 +648,38 @@ function openEdit(id) {
 
 document.getElementById("addBtn").addEventListener("click", openAdd);
 
-// ---- Add event from image (free, in-browser OCR — no server, weaker accuracy) ----
+// ---- Add event from image (AI vision via Mistral Pixtral, through our Vercel API) ----
 document.getElementById("scanImageBtn").addEventListener("click", () => document.getElementById("scanImageInput").click());
 document.getElementById("scanImageInput").addEventListener("change", async (evt) => {
   const file = evt.target.files[0];
   evt.target.value = "";
   if (!file) return;
-  if (typeof Tesseract === "undefined") {
-    showToast("ספריית הזיהוי לא נטענה (בדוק חיבור לאינטרנט ורענן את הדף)");
-    return;
-  }
-  showToast("סורק את התמונה... זה עשוי לקחת כמה שניות");
-  let worker;
+  showToast("שולח לזיהוי AI... זה עשוי לקחת כמה שניות");
   try {
     const blob = await resizeImageForOCR(file);
-    worker = await Tesseract.createWorker("heb+eng");
-    const { data } = await worker.recognize(blob);
-    const text = (data && data.text) || "";
-    const parsed = parseEventFromText(text, data && data.blocks);
+    const base64 = await blobToBase64(blob);
+    const res = await fetch("/api/parse-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: base64 })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ("שגיאת שרת " + res.status));
+    const parsed = {
+      title: data.title || "",
+      date: data.date || "",
+      endDate: data.endDate || data.date || "",
+      allDay: !!data.allDay,
+      startTime: data.startTime || "",
+      endTime: data.endTime || "",
+      location: data.location || ""
+    };
     openAddFromParsed(parsed);
-    document.getElementById("formNotes").value = text.trim();
-    showToast("זוהה טקסט מהתמונה — בדוק ותקן היטב לפני שמירה (זיהוי בסיסי, לא מושלם)");
+    document.getElementById("formNotes").value = "זוהה אוטומטית ע\"י AI מתוך תמונה — בדוק ותקן לפני שמירה";
+    showToast("זוהו פרטי האירוע — בדוק ותקן לפני שמירה");
   } catch (err) {
-    console.error("OCR error:", err);
-    const msg = (err && (err.message || String(err))) || "שגיאה לא ידועה";
-    showToast("זיהוי הטקסט נכשל: " + msg);
-  } finally {
-    if (worker) { try { await worker.terminate(); } catch(e) {} }
+    console.error("AI scan error:", err);
+    showToast("זיהוי התמונה נכשל: " + (err.message || "שגיאה לא ידועה"));
   }
 });
 
@@ -707,70 +710,13 @@ function resizeImageForOCR(file, maxDim, quality) {
   });
 }
 
-function pickTitleByFontSize(blocks) {
-  let best = null, bestHeight = 0;
-  (blocks || []).forEach(block => {
-    (block.paragraphs || []).forEach(para => {
-      (para.lines || []).forEach(line => {
-        const txt = (line.text || "").trim();
-        const stripped = txt.replace(/[\d\/.\-:'"]/g, "").trim();
-        if (stripped.length < 3) return;
-        if (typeof line.confidence === "number" && line.confidence < 35) return;
-        const height = line.bbox ? (line.bbox.y1 - line.bbox.y0) : 0;
-        if (height > bestHeight) { bestHeight = height; best = txt; }
-      });
-    });
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("כשל בהמרת התמונה"));
+    reader.readAsDataURL(blob);
   });
-  return best;
-}
-
-function parseEventFromText(text, blocks) {
-  const result = { title: "", date: "", startTime: "", endTime: "", location: "" };
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
-  // numeric date: DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY
-  const numericMatch = text.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
-  if (numericMatch) {
-    let d = parseInt(numericMatch[1], 10), m = parseInt(numericMatch[2], 10), y = parseInt(numericMatch[3], 10);
-    if (y < 100) y += 2000;
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) result.date = y + "-" + pad2(m) + "-" + pad2(d);
-  }
-  // Hebrew month name date: "15 בספטמבר 2026"
-  if (!result.date) {
-    const re = new RegExp("(\\d{1,2})\\s*(?:ב|ל)?(" + HEBREW_MONTHS.join("|") + ")(?:['\"]?\\s*(\\d{4}))?");
-    const hm = text.match(re);
-    if (hm) {
-      const day = parseInt(hm[1], 10);
-      const monthIdx = HEBREW_MONTHS.indexOf(hm[2]);
-      const year = hm[3] ? parseInt(hm[3], 10) : new Date().getFullYear();
-      if (monthIdx >= 0 && day >= 1 && day <= 31) result.date = year + "-" + pad2(monthIdx + 1) + "-" + pad2(day);
-    }
-  }
-
-  // times: first HH:MM found = start, second = end
-  const timeMatches = [...text.matchAll(/(\d{1,2}):(\d{2})/g)];
-  if (timeMatches.length > 0) result.startTime = pad2(parseInt(timeMatches[0][1], 10)) + ":" + timeMatches[0][2];
-  if (timeMatches.length > 1) result.endTime = pad2(parseInt(timeMatches[1][1], 10)) + ":" + timeMatches[1][2];
-
-  // title: prefer the largest-font line on the page (event names are usually
-  // printed biggest on invitations) — falls back to first substantial line
-  const byFontSize = pickTitleByFontSize(blocks);
-  if (byFontSize) {
-    result.title = byFontSize;
-  } else {
-    for (const line of lines) {
-      const stripped = line.replace(/[\d\/.\-:'"]/g, "").trim();
-      if (stripped.length >= 3) { result.title = line; break; }
-    }
-  }
-
-  // location: line containing a common venue/address keyword
-  const locKeywords = ["רחוב", "אולם", "כתובת", "גן אירועים", "מלון", "היכל", "מרכז", "קריית", "שדרות"];
-  for (const line of lines) {
-    if (locKeywords.some(k => line.includes(k))) { result.location = line; break; }
-  }
-
-  return result;
 }
 
 function openAddFromParsed(p) {
