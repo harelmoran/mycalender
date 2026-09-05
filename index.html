@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="יומן">
 <meta name="theme-color" content="#1B2028">
 <title>יומן</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   :root {
     --bg: #12151c;
@@ -647,37 +649,29 @@ function openEdit(id) {
 
 document.getElementById("addBtn").addEventListener("click", openAdd);
 
-// ---- Add event from image (Gemini-powered) ----
+// ---- Add event from image (free, in-browser OCR — no server, weaker accuracy) ----
 document.getElementById("scanImageBtn").addEventListener("click", () => document.getElementById("scanImageInput").click());
 document.getElementById("scanImageInput").addEventListener("change", async (evt) => {
   const file = evt.target.files[0];
   evt.target.value = "";
   if (!file) return;
-  showToast("מנתח את התמונה... זה עשוי לקחת כמה שניות");
+  showToast("סורק את התמונה... זה עשוי לקחת כמה שניות");
   try {
-    const { base64, mimeType } = await resizeImageForUpload(file);
-    const res = await fetch("/api/parse-event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image: base64, mimeType })
-    });
-    let data;
-    try {
-      data = await res.json();
-    } catch (parseErr) {
-      throw new Error("תשובה לא תקינה מהשרת (סטטוס " + res.status + ")");
-    }
-    if (!res.ok) { showToast(data.error || ("ניתוח נכשל (סטטוס " + res.status + ")")); return; }
-    openAddFromParsed(data);
-    showToast("זוהו פרטים מהתמונה — בדוק ותקן לפני שמירה");
+    const blob = await resizeImageForOCR(file);
+    const { data } = await Tesseract.recognize(blob, "heb+eng");
+    const text = (data && data.text) || "";
+    const parsed = parseEventFromText(text);
+    openAddFromParsed(parsed);
+    document.getElementById("formNotes").value = text.trim();
+    showToast("זוהה טקסט מהתמונה — בדוק ותקן היטב לפני שמירה (זיהוי בסיסי, לא מושלם)");
   } catch (err) {
-    showToast("ניתוח נכשל: " + (err.message || "שגיאה לא ידועה"));
+    showToast("זיהוי הטקסט נכשל: " + (err.message || "שגיאה לא ידועה"));
   }
 });
 
-function resizeImageForUpload(file, maxDim, quality) {
-  maxDim = maxDim || 1600;
-  quality = quality || 0.82;
+function resizeImageForOCR(file, maxDim, quality) {
+  maxDim = maxDim || 2000;
+  quality = quality || 0.9;
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -693,16 +687,56 @@ function resizeImageForUpload(file, maxDim, quality) {
       ctx.drawImage(img, 0, 0, width, height);
       URL.revokeObjectURL(url);
       canvas.toBlob((blob) => {
-        if (!blob) { reject(new Error("כשל בכיווץ התמונה")); return; }
-        const reader = new FileReader();
-        reader.onload = () => resolve({ base64: String(reader.result).split(",")[1], mimeType: "image/jpeg" });
-        reader.onerror = () => reject(new Error("כשל בקריאת התמונה"));
-        reader.readAsDataURL(blob);
+        if (!blob) { reject(new Error("כשל בעיבוד התמונה")); return; }
+        resolve(blob);
       }, "image/jpeg", quality);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("כשל בטעינת התמונה")); };
     img.src = url;
   });
+}
+
+function parseEventFromText(text) {
+  const result = { title: "", date: "", startTime: "", endTime: "", location: "" };
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // numeric date: DD/MM/YYYY, DD.MM.YYYY, DD-MM-YYYY
+  const numericMatch = text.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+  if (numericMatch) {
+    let d = parseInt(numericMatch[1], 10), m = parseInt(numericMatch[2], 10), y = parseInt(numericMatch[3], 10);
+    if (y < 100) y += 2000;
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) result.date = y + "-" + pad2(m) + "-" + pad2(d);
+  }
+  // Hebrew month name date: "15 בספטמבר 2026"
+  if (!result.date) {
+    const re = new RegExp("(\\d{1,2})\\s*(?:ב|ל)?(" + HEBREW_MONTHS.join("|") + ")(?:['\"]?\\s*(\\d{4}))?");
+    const hm = text.match(re);
+    if (hm) {
+      const day = parseInt(hm[1], 10);
+      const monthIdx = HEBREW_MONTHS.indexOf(hm[2]);
+      const year = hm[3] ? parseInt(hm[3], 10) : new Date().getFullYear();
+      if (monthIdx >= 0 && day >= 1 && day <= 31) result.date = year + "-" + pad2(monthIdx + 1) + "-" + pad2(day);
+    }
+  }
+
+  // times: first HH:MM found = start, second = end
+  const timeMatches = [...text.matchAll(/(\d{1,2}):(\d{2})/g)];
+  if (timeMatches.length > 0) result.startTime = pad2(parseInt(timeMatches[0][1], 10)) + ":" + timeMatches[0][2];
+  if (timeMatches.length > 1) result.endTime = pad2(parseInt(timeMatches[1][1], 10)) + ":" + timeMatches[1][2];
+
+  // title: first substantial line (not just digits/punctuation)
+  for (const line of lines) {
+    const stripped = line.replace(/[\d\/.\-:'"]/g, "").trim();
+    if (stripped.length >= 3) { result.title = line; break; }
+  }
+
+  // location: line containing a common venue/address keyword
+  const locKeywords = ["רחוב", "אולם", "כתובת", "גן אירועים", "מלון", "היכל", "מרכז", "קריית", "שדרות"];
+  for (const line of lines) {
+    if (locKeywords.some(k => line.includes(k))) { result.location = line; break; }
+  }
+
+  return result;
 }
 
 function openAddFromParsed(p) {
