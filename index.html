@@ -126,7 +126,8 @@
   .hour-label { position:absolute; right:2px; font-size:11px; color: var(--muted); background: var(--bg); padding: 0 2px; z-index:1; }
   .half-line { position:absolute; left:0; right:56px; height:0; border-top:1px solid rgba(156,163,175,0.15); }
   .timeline-events { position:absolute; top:0; left:0; right:58px; bottom:0; }
-  .timeline-event { position:absolute; border-radius:8px; padding:4px 8px; overflow:hidden; cursor:pointer; box-sizing:border-box; }
+  .timeline-event { position:absolute; border-radius:8px; padding:4px 8px; overflow:hidden; cursor:pointer; box-sizing:border-box; touch-action:none; transition: box-shadow .15s ease; }
+  .timeline-event.dragging { opacity:.9; box-shadow:0 8px 20px rgba(0,0,0,.5); z-index:6; transition:none; }
   .timeline-event .te-title { font-size:12px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .timeline-event .te-time { font-size:10px; color:rgba(255,255,255,.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .now-line { position:absolute; left:0; right:56px; height:0; border-top:2px solid var(--danger); z-index:2; }
@@ -297,7 +298,26 @@ function showOverlay(id) {
   el.classList.remove("closing");
   el.classList.add("show");
   lockBodyScroll();
+  fitToVisualViewport(el);
 }
+// iOS standalone (home-screen) apps sometimes compute position:fixed;inset:0
+// against a stale/incorrect viewport height, leaving a gap at the bottom that
+// exposes whatever sits behind. Force the real, current visual viewport
+// height in JS as a more reliable fallback than CSS units alone.
+function fitToVisualViewport(el) {
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  el.style.height = h + "px";
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", () => {
+    document.querySelectorAll(".day-view-overlay.show").forEach(fitToVisualViewport);
+  });
+}
+window.addEventListener("orientationchange", () => {
+  setTimeout(() => {
+    document.querySelectorAll(".day-view-overlay.show").forEach(fitToVisualViewport);
+  }, 250);
+});
 function hideOverlay(id, duration) {
   const el = document.getElementById(id);
   el.classList.add("closing");
@@ -461,6 +481,10 @@ function timeToMinutes(t) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + (m || 0);
 }
+function minutesToTime(mins) {
+  mins = Math.max(0, Math.min(1439, Math.round(mins)));
+  return pad2(Math.floor(mins / 60)) + ":" + pad2(mins % 60);
+}
 
 function renderTimelineGrid() {
   const grid = document.getElementById("timelineGrid");
@@ -507,8 +531,82 @@ function renderTimelineEvents(timedEvents) {
     </div>`;
   }).join("");
   wrap.querySelectorAll(".timeline-event").forEach(el => {
-    el.addEventListener("click", () => openEdit(el.dataset.id));
+    el.addEventListener("click", () => {
+      if (el.dataset.justDragged === "1") { el.dataset.justDragged = ""; return; }
+      openEdit(el.dataset.id);
+    });
+    attachEventDrag(el);
   });
+}
+
+// Long-press + drag on a timeline event to move it earlier/later (preserves
+// duration; snaps to 5-minute increments). Only single-day events support
+// this — multi-day segments have no single well-defined start/end to drag.
+const DRAG_LONG_PRESS_MS = 350;
+const DRAG_SNAP_MIN = 5;
+function attachEventDrag(el) {
+  let pressTimer = null;
+  let dragging = false;
+  let moved = false;
+  let startY = 0;
+  let startMin = 0;
+  let durationMin = 0;
+
+  const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+
+  el.addEventListener("pointerdown", (ev) => {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    const ev_ = events.find(x => x.id === el.dataset.id);
+    if (!ev_ || ev_.allDay || ev_.date !== eventEndDate(ev_)) return; // skip all-day / multi-day
+    moved = false;
+    startY = ev.clientY;
+    cancelPress();
+    pressTimer = setTimeout(() => {
+      dragging = true;
+      el.classList.add("dragging");
+      try { el.setPointerCapture(ev.pointerId); } catch(e) {}
+      startMin = timeToMinutes(ev_.startTime || "00:00");
+      durationMin = Math.max(timeToMinutes(ev_.endTime || ev_.startTime || "00:00") - startMin, 5);
+      if (navigator.vibrate) navigator.vibrate(8);
+    }, DRAG_LONG_PRESS_MS);
+  });
+
+  el.addEventListener("pointermove", (ev) => {
+    if (!dragging) {
+      if (pressTimer && Math.abs(ev.clientY - startY) > 8) cancelPress();
+      return;
+    }
+    ev.preventDefault();
+    moved = true;
+    const deltaY = ev.clientY - startY;
+    let newStart = startMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+    newStart = Math.max(0, Math.min(newStart, 1440 - durationMin));
+    el.style.top = ((newStart / 60) * HOUR_H) + "px";
+    const timeEl = el.querySelector(".te-time");
+    if (timeEl) timeEl.textContent = minutesToTime(newStart) + " - " + minutesToTime(newStart + durationMin);
+    el._pendingStart = newStart;
+  });
+
+  const finishDrag = () => {
+    cancelPress();
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    if (moved && el._pendingStart != null) {
+      const ev_ = events.find(x => x.id === el.dataset.id);
+      if (ev_) {
+        ev_.startTime = minutesToTime(el._pendingStart);
+        ev_.endTime = minutesToTime(el._pendingStart + durationMin);
+        persist();
+        pushUpdateToGoogle(ev_);
+      }
+      el.dataset.justDragged = "1";
+      renderAgenda();
+    }
+    el._pendingStart = null;
+  };
+  el.addEventListener("pointerup", finishDrag);
+  el.addEventListener("pointercancel", finishDrag);
 }
 
 function renderNowLine() {
