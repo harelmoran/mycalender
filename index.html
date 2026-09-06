@@ -434,12 +434,15 @@ function renderMonthAgenda() {
       <div class="event-time">${e.allDay ? "כל היום" : segmentLabel(e, selectedDate)}</div>
       <div style="flex:1;">
         <div class="event-title">${escapeHtml(e.title)}</div>
-        ${e.location ? `<div class="event-location">📍 ${escapeHtml(e.location)}</div>` : ""}
+        ${e.location ? `<div class="event-location" data-loc="${escapeHtml(e.location)}">📍 ${escapeHtml(e.location)}</div>` : ""}
       </div>
     </div>
   `).join("");
   wrap.querySelectorAll(".event-item").forEach(item => {
     item.addEventListener("click", () => openEdit(item.dataset.id));
+  });
+  wrap.querySelectorAll(".event-location").forEach(loc => {
+    loc.addEventListener("click", (ev) => { ev.stopPropagation(); openInMaps(loc.dataset.loc); });
   });
 }
 
@@ -506,7 +509,7 @@ function renderTimelineGrid() {
   let html = "";
   for (let h = 0; h < 24; h++) {
     html += `<div class="hour-line" style="top:${h*HOUR_H}px;"></div>`;
-    html += `<span class="hour-label" style="top:${h*HOUR_H - 8}px;">${h}:00</span>`;
+    html += `<span class="hour-label" style="top:${Math.max(h*HOUR_H - 8, 2)}px;">${h}:00</span>`;
     html += `<div class="half-line" style="top:${h*HOUR_H + HOUR_H/2}px;"></div>`;
   }
   grid.innerHTML = html;
@@ -545,7 +548,7 @@ function renderTimelineEvents(timedEvents) {
     return `<div class="timeline-event${editable ? " edit-mode" : ""}" data-id="${e.id}" style="top:${top}px; height:${height}px; right:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); background:${colorValue(e.color)};">
       <div class="te-title">${escapeHtml(e.title)}</div>
       <div class="te-time">${segmentLabel(e, selectedDate)}</div>
-      ${e.location && height > 40 ? `<div class="te-time">📍 ${escapeHtml(e.location)}</div>` : ""}
+      ${e.location && height > 40 ? `<div class="te-time te-location" data-loc="${escapeHtml(e.location)}">📍 ${escapeHtml(e.location)}</div>` : ""}
       ${editable ? `<div class="te-handle te-handle-top" data-handle="start"></div><div class="te-handle te-handle-bottom" data-handle="end"></div>` : ""}
     </div>`;
   }).join("");
@@ -553,6 +556,8 @@ function renderTimelineEvents(timedEvents) {
     el.addEventListener("click", (ev) => {
       if (el.dataset.justDragged === "1") { el.dataset.justDragged = ""; return; }
       if (ev.target.closest(".te-handle")) return;
+      const locEl = ev.target.closest(".te-location");
+      if (locEl) { openInMaps(locEl.dataset.loc); return; }
       openEdit(el.dataset.id);
     });
     attachEventDrag(el);
@@ -634,6 +639,7 @@ function attachEventDrag(el) {
     }
   });
 
+  let rafPending = false;
   el.addEventListener("pointermove", (ev) => {
     if (!dragging) {
       if (pressTimer && Math.abs(ev.clientY - startY) > 8) cancelPress();
@@ -644,12 +650,18 @@ function attachEventDrag(el) {
     const deltaY = ev.clientY - startY;
     let newStart = startMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
     newStart = Math.max(0, Math.min(newStart, 1440 - durationMin));
-    const topPx = (newStart / 60) * HOUR_H;
-    el.style.top = topPx + "px";
-    const timeEl = el.querySelector(".te-time");
-    if (timeEl) timeEl.textContent = minutesToTime(newStart) + " - " + minutesToTime(newStart + durationMin);
-    showDragTimeLabel(topPx, minutesToTime(newStart));
     el._pendingStart = newStart;
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (el._pendingStart == null) return;
+      const topPx = (el._pendingStart / 60) * HOUR_H;
+      el.style.top = topPx + "px";
+      const timeEl = el.querySelector(".te-time");
+      if (timeEl) timeEl.textContent = minutesToTime(el._pendingStart) + " - " + minutesToTime(el._pendingStart + durationMin);
+      showDragTimeLabel(topPx, minutesToTime(el._pendingStart));
+    });
   });
 
   const finishDrag = () => {
@@ -679,7 +691,7 @@ function attachEventDrag(el) {
 // while the event is already in edit mode, so no long-press needed here.
 function attachHandleDrag(el, handle) {
   const which = handle.dataset.handle; // "start" or "end"
-  let dragging = false, startY = 0, fixedMin = 0, otherMin = 0;
+  let dragging = false, startY = 0, fixedMin = 0, otherMin = 0, rafPending = false;
 
   handle.addEventListener("pointerdown", (ev) => {
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
@@ -702,21 +714,27 @@ function attachHandleDrag(el, handle) {
     ev.stopPropagation();
     const deltaY = ev.clientY - startY;
     let newVal = otherMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
-    if (which === "start") {
-      newVal = Math.max(0, Math.min(newVal, fixedMin - DRAG_SNAP_MIN));
-      el.style.top = ((newVal / 60) * HOUR_H) + "px";
-      el.style.height = Math.max(((fixedMin - newVal) / 60) * HOUR_H, 22) + "px";
-    } else {
-      newVal = Math.min(1440, Math.max(newVal, fixedMin + DRAG_SNAP_MIN));
-      el.style.height = Math.max(((newVal - fixedMin) / 60) * HOUR_H, 22) + "px";
-    }
-    const timeEl = el.querySelector(".te-time");
-    if (timeEl) timeEl.textContent = which === "start"
-      ? (minutesToTime(newVal) + " - " + minutesToTime(fixedMin))
-      : (minutesToTime(fixedMin) + " - " + minutesToTime(newVal));
-    const labelTop = which === "start" ? (newVal / 60) * HOUR_H : (newVal / 60) * HOUR_H;
-    showDragTimeLabel(labelTop, minutesToTime(newVal));
+    if (which === "start") newVal = Math.max(0, Math.min(newVal, fixedMin - DRAG_SNAP_MIN));
+    else newVal = Math.min(1440, Math.max(newVal, fixedMin + DRAG_SNAP_MIN));
     el._pendingHandleVal = newVal;
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      const v = el._pendingHandleVal;
+      if (v == null) return;
+      if (which === "start") {
+        el.style.top = ((v / 60) * HOUR_H) + "px";
+        el.style.height = Math.max(((fixedMin - v) / 60) * HOUR_H, 22) + "px";
+      } else {
+        el.style.height = Math.max(((v - fixedMin) / 60) * HOUR_H, 22) + "px";
+      }
+      const timeEl = el.querySelector(".te-time");
+      if (timeEl) timeEl.textContent = which === "start"
+        ? (minutesToTime(v) + " - " + minutesToTime(fixedMin))
+        : (minutesToTime(fixedMin) + " - " + minutesToTime(v));
+      showDragTimeLabel((v / 60) * HOUR_H, minutesToTime(v));
+    });
   });
 
   const finishHandleDrag = () => {
@@ -996,10 +1014,12 @@ function openAddFromParsed(p) {
 document.getElementById("closeForm").addEventListener("click", () => hideOverlay("formOverlay"));
 document.getElementById("formOverlay").addEventListener("click", (e) => { if (e.target.id === "formOverlay") hideOverlay("formOverlay"); });
 
-document.getElementById("openMapBtn").addEventListener("click", () => {
-  const loc = document.getElementById("formLocation").value.trim();
+function openInMaps(loc) {
   if (!loc) return;
   window.open("https://maps.apple.com/?q=" + encodeURIComponent(loc), "_blank");
+}
+document.getElementById("openMapBtn").addEventListener("click", () => {
+  openInMaps(document.getElementById("formLocation").value.trim());
 });
 
 document.getElementById("formSubmit").addEventListener("click", () => {
