@@ -813,98 +813,149 @@ document.addEventListener("pointerdown", (ev) => {
   exitEditMode();
 }, { capture: true });
 
+let dragSession = null; // { id, pointerId, startY, startMin, durationMin, moved, dayChanged, edgeDir, edgeSince, pendingStart }
+function getTimelineEl(id) { return document.querySelector(`.timeline-event[data-id="${id}"]`); }
+
 function attachEventDrag(el) {
   let pressTimer = null;
-  let dragging = false;
-  let moved = false;
-  let startY = 0;
-  let startMin = 0;
-  let durationMin = 0;
-
+  let armStartY = 0;
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
 
-  const beginDrag = (ev, ev_) => {
-    dragging = true;
-    el.classList.add("dragging");
-    try { el.setPointerCapture(ev.pointerId); } catch(e) {}
-    startMin = timeToMinutes(ev_.startTime || "00:00");
-    durationMin = Math.max(timeToMinutes(ev_.endTime || ev_.startTime || "00:00") - startMin, DRAG_SNAP_MIN);
+  const beginDrag = (ev, ev_, id) => {
+    const cur = getTimelineEl(id);
+    if (!cur) return;
+    cur.classList.add("dragging");
+    try { cur.setPointerCapture(ev.pointerId); } catch(e) {}
+    const startMin = timeToMinutes(ev_.startTime || "00:00");
+    const durationMin = Math.max(timeToMinutes(ev_.endTime || ev_.startTime || "00:00") - startMin, DRAG_SNAP_MIN);
+    dragSession = { id, pointerId: ev.pointerId, startY: ev.clientY, startMin, durationMin, moved: false, dayChanged: false, edgeDir: null, edgeSince: null, pendingStart: null };
     if (navigator.vibrate) navigator.vibrate(8);
   };
 
   el.addEventListener("pointerdown", (ev) => {
     if (ev.target.closest(".te-handle")) return;
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
-    const ev_ = events.find(x => x.id === el.dataset.id);
+    const id = el.dataset.id;
+    const ev_ = events.find(x => x.id === id);
     if (!ev_ || ev_.allDay || ev_.date !== eventEndDate(ev_)) return; // skip all-day / multi-day
     ev.preventDefault();
-    moved = false;
-    startY = ev.clientY;
+    armStartY = ev.clientY;
     cancelPress();
-    if (el.dataset.id === editModeEventId) {
-      // already in edit mode — move immediately, no long-press needed
-      beginDrag(ev, ev_);
+    if (id === editModeEventId) {
+      beginDrag(ev, ev_, id); // already in edit mode — move immediately, no long-press needed
     } else {
       pressTimer = setTimeout(() => {
-        editModeEventId = el.dataset.id;
+        editModeEventId = id;
         el.classList.add("edit-mode");
-        beginDrag(ev, ev_);
+        beginDrag(ev, ev_, id);
       }, DRAG_LONG_PRESS_MS);
     }
   });
-
-  let rafPending = false;
   el.addEventListener("pointermove", (ev) => {
-    if (!dragging) {
-      if (pressTimer && Math.abs(ev.clientY - startY) > 8) cancelPress();
-      return;
-    }
-    ev.preventDefault();
-    moved = true;
-    const deltaY = ev.clientY - startY;
-    let newStart = startMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
-    newStart = Math.max(0, Math.min(newStart, 1440 - durationMin));
-    el._pendingStart = newStart;
-    if (rafPending) return;
-    rafPending = true;
-    requestAnimationFrame(() => {
-      rafPending = false;
-      if (el._pendingStart == null) return;
-      const topPx = (el._pendingStart / 60) * HOUR_H;
-      el.style.top = topPx + "px";
-      const timeEl = el.querySelector(".te-time");
-      if (timeEl) timeEl.textContent = minutesToTime(el._pendingStart) + " - " + minutesToTime(el._pendingStart + durationMin);
-      showDragTimeLabel(topPx, minutesToTime(el._pendingStart));
-    });
+    if (dragSession) return; // handled by the document-level listener below
+    if (pressTimer && Math.abs(ev.clientY - armStartY) > 8) cancelPress();
   });
-
-  const finishDrag = () => {
-    cancelPress();
-    if (!dragging) return;
-    dragging = false;
-    el.classList.remove("dragging");
-    hideDragTimeLabel();
-    const id = el.dataset.id;
-    if (moved && el._pendingStart != null) {
-      const ev_ = events.find(x => x.id === id);
-      if (ev_) {
-        ev_.startTime = minutesToTime(el._pendingStart);
-        ev_.endTime = minutesToTime(el._pendingStart + durationMin);
-        persist();
-        pushUpdateToGoogle(ev_);
-      }
-      el.dataset.justDragged = "1";
-    }
-    el._pendingStart = null;
-    renderAgenda(); // refresh so edit-mode handles reflect current state either way
-    if (!moved) {
-      const freshEl = document.querySelector(`.timeline-event[data-id="${id}"]`);
-      if (freshEl) showEventContextMenu(freshEl, id);
-    }
-  };
-  el.addEventListener("pointerup", finishDrag);
-  el.addEventListener("pointercancel", finishDrag);
 }
+
+// Drag logic lives at the document level (not per-element) so it survives
+// the event's DOM node being replaced mid-gesture when a day switch happens.
+const EDGE_ZONE_PX = 46;
+const EDGE_HOLD_MS = 550;
+let dragRafPending = false;
+
+document.addEventListener("pointermove", (ev) => {
+  if (!dragSession) return;
+  ev.preventDefault();
+  if (dragRafPending) return;
+  dragRafPending = true;
+  requestAnimationFrame(() => {
+    dragRafPending = false;
+    if (!dragSession) return;
+    const el = getTimelineEl(dragSession.id);
+    if (!el) return;
+    const deltaY = ev.clientY - dragSession.startY;
+    if (Math.abs(deltaY) > 4) dragSession.moved = true;
+    let newStart = dragSession.startMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+    newStart = Math.max(0, Math.min(newStart, 1440 - dragSession.durationMin));
+    const topPx = (newStart / 60) * HOUR_H;
+    el.style.top = topPx + "px";
+    const timeEl = el.querySelector(".te-time");
+    if (timeEl) timeEl.textContent = minutesToTime(newStart) + " - " + minutesToTime(newStart + dragSession.durationMin);
+    showDragTimeLabel(topPx, minutesToTime(newStart));
+    dragSession.pendingStart = newStart;
+
+    // Hold near the left/right edge of the day view to flip to the
+    // next/previous day without letting go (matches the swipe convention:
+    // near the left edge = next day, near the right edge = previous day).
+    const content = document.getElementById("dayViewContent");
+    if (!content) return;
+    const rect = content.getBoundingClientRect();
+    const nearLeft = ev.clientX - rect.left < EDGE_ZONE_PX;
+    const nearRight = rect.right - ev.clientX < EDGE_ZONE_PX;
+    const dir = nearLeft ? "next" : nearRight ? "prev" : null;
+    if (dir) {
+      if (dragSession.edgeDir !== dir) { dragSession.edgeDir = dir; dragSession.edgeSince = performance.now(); }
+      else if (performance.now() - dragSession.edgeSince > EDGE_HOLD_MS) {
+        switchDragToDay(dir === "next" ? 1 : -1, ev.pointerId);
+      }
+    } else {
+      dragSession.edgeDir = null; dragSession.edgeSince = null;
+    }
+  });
+});
+
+function switchDragToDay(deltaDays, pointerId) {
+  if (!dragSession) return;
+  const ev_ = events.find(x => x.id === dragSession.id);
+  if (!ev_) return;
+  const newDate = isoAddDays(selectedDate, deltaDays);
+  const wasSingleDay = ev_.date === eventEndDate(ev_);
+  ev_.date = newDate;
+  if (wasSingleDay) ev_.endDate = newDate;
+  persist();
+  dragSession.dayChanged = true;
+  selectedDate = newDate;
+  const [y, m] = selectedDate.split("-").map(Number);
+  viewYear = y; viewMonth = m;
+  renderAgenda();
+  const freshEl = getTimelineEl(dragSession.id);
+  if (freshEl) {
+    freshEl.classList.add("dragging");
+    try { freshEl.setPointerCapture(pointerId); } catch(e) {}
+  }
+  dragSession.edgeDir = null;
+  dragSession.edgeSince = null;
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+function finishDragSession() {
+  if (!dragSession) return;
+  const { id, pendingStart, durationMin, moved, dayChanged } = dragSession;
+  const el = getTimelineEl(id);
+  if (el) el.classList.remove("dragging");
+  hideDragTimeLabel();
+  if ((moved || dayChanged)) {
+    const ev_ = events.find(x => x.id === id);
+    if (ev_) {
+      if (moved && pendingStart != null) {
+        ev_.startTime = minutesToTime(pendingStart);
+        ev_.endTime = minutesToTime(pendingStart + durationMin);
+      }
+      persist();
+      pushUpdateToGoogle(ev_);
+    }
+    if (el) el.dataset.justDragged = "1";
+  }
+  dragSession = null;
+  renderAgenda();
+  if (!moved && !dayChanged) {
+    const freshEl = getTimelineEl(id);
+    if (freshEl) showEventContextMenu(freshEl, id);
+  }
+}
+document.addEventListener("pointerup", finishDragSession);
+document.addEventListener("pointercancel", finishDragSession);
+
 
 function duplicateEvent(id) {
   const e = events.find(x => x.id === id);
