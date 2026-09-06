@@ -24,7 +24,7 @@
   * { box-sizing: border-box; }
   input, select, textarea { font-size: 16px; }
   body { margin:0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; touch-action: manipulation; }
-  .app { max-width: 720px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom)); }
+  .app { max-width: 720px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom)); position:relative; }
   .cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; }
   .cal-header .nav-btn { background:none; border:none; color: var(--ink); font-size:20px; padding:6px 10px; cursor:pointer; }
   .cal-header .month-label { font-size:19px; font-weight:800; }
@@ -67,7 +67,8 @@
   @keyframes modalSlideUp { from { transform: translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
   @keyframes modalSlideDown { from { transform:none; opacity:1; } to { transform: translateY(40px); opacity:0; } }
   .modal { background: var(--surface); width:100%; max-width:720px; border-radius:18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); max-height:90vh; overflow-y:auto; overscroll-behavior: contain; }
-  .modal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .modal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; touch-action:none; }
+  .modal-drag-handle { width:40px; height:5px; background: var(--surface2); border-radius:3px; margin:0 auto 14px; touch-action:none; }
   .modal-head h2 { margin:0; font-size:18px; }
   .icon-btn { background:none; border:none; cursor:pointer; }
   .modal label { display:block; font-size:12px; color: var(--muted); margin: 10px 0 4px; }
@@ -96,6 +97,25 @@
   .color-swatch.selected { border-color: var(--ink); }
   .modal-submit { width:100%; margin-top:18px; padding:13px; border:none; border-radius:12px; background: var(--gold); color:#1b1406; font-size:15px; font-weight:800; cursor:pointer; }
   .modal-delete { width:100%; margin-top:10px; padding:12px; border:1px solid var(--danger); border-radius:12px; background:none; color: var(--danger); font-size:14px; font-weight:700; cursor:pointer; }
+  .view-row { padding:12px 0; border-bottom:1px solid var(--surface2); font-size:15px; display:flex; align-items:center; gap:8px; }
+  .view-row:first-of-type { padding-top:0; }
+  .view-color-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
+  .view-title-row { display:flex; align-items:center; gap:9px; }
+  .view-title-row h2 { margin:0; font-size:21px; line-height:1.3; }
+  .view-subtitle { margin-top:5px; margin-right:20px; font-size:14px; color: var(--gold); cursor:pointer; }
+  .view-datetime { margin-top:12px; padding:11px 13px; background: var(--surface2); border-radius:10px; font-size:14px; color: var(--ink); }
+  .view-mini-timeline-wrap { margin:14px 0; border-radius:12px; overflow:hidden; background: var(--surface2); padding:10px 0; }
+  .view-mini-timeline { position:relative; height:140px; margin:0 16px; }
+  .mini-hour-line { position:absolute; right:0; left:42px; height:1px; background: rgba(255,255,255,.08); }
+  .mini-hour-label { position:absolute; left:0; font-size:10px; color: var(--muted); }
+  .mini-event-block { position:absolute; right:0; left:46px; border-radius:8px; padding:5px 9px; overflow:hidden; box-sizing:border-box; }
+  .mini-event-title { font-size:12px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mini-event-loc, .mini-event-time { font-size:10px; color:rgba(255,255,255,.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .view-notes-section { margin-top:6px; }
+  .view-notes { white-space:pre-wrap; line-height:1.5; color: var(--ink); font-size:14px; max-height:105px; overflow:hidden; position:relative; }
+  .view-notes.expanded { max-height:none; }
+  .view-notes a { color: var(--gold); text-decoration:underline; word-break:break-all; }
+  .view-notes-toggle { background:none; border:none; color: var(--gold); font-size:13px; font-weight:700; margin-top:8px; cursor:pointer; padding:0; }
   .form-error { color: var(--danger); font-size:12px; margin: 6px 0; text-align:center; font-weight:600; }
   .confirm-box { background: var(--surface); border-radius:16px; padding:20px; max-width:320px; margin:auto; text-align:center; }
   .confirm-box p { margin:0 0 16px; font-size:14px; }
@@ -142,11 +162,20 @@
   .timeline-event .te-title { font-size:12px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .timeline-event .te-time { font-size:10px; color:rgba(255,255,255,.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .now-line { position:absolute; left:0; right:56px; height:0; border-top:2px solid var(--danger); z-index:2; }
+  .user-icon-btn { position:absolute; top: calc(16px + env(safe-area-inset-top)); left:16px; width:38px; height:38px; border-radius:50%; background: var(--surface2); border:none; display:flex; align-items:center; justify-content:center; z-index:5; padding:0; }
+  .user-icon-btn svg { width:20px; height:20px; color: var(--muted); }
+  .user-icon-btn.connected svg { color: var(--ink); }
+  .user-status-dot { position:absolute; bottom:1px; left:1px; width:11px; height:11px; border-radius:50%; background: var(--muted); border:2px solid var(--bg); }
+  .user-icon-btn.connected .user-status-dot { background: #34c759; }
   .now-line .now-dot { position:absolute; right:-5px; top:-5px; width:10px; height:10px; border-radius:50%; background: var(--danger); }
 </style>
 </head>
 <body>
 <div class="app">
+  <button class="user-icon-btn" id="googleBtn" title="חיבור ל-Google Calendar">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.9-2.2 4.9-4.9S14.7 2.2 12 2.2 7.1 4.4 7.1 7.1 9.3 12 12 12zm0 2.5c-3.3 0-9.8 1.6-9.8 4.9v1.2c0 .7.5 1.2 1.2 1.2h17.2c.7 0 1.2-.5 1.2-1.2v-1.2c0-3.3-6.5-4.9-9.8-4.9z"/></svg>
+    <span class="user-status-dot"></span>
+  </button>
   <div class="cal-header">
     <button class="nav-btn" id="prevMonth" aria-label="חודש קודם"><span dir="ltr" style="unicode-bidi: isolate-override;">›</span></button>
     <div class="month-label" id="monthLabel"></div>
@@ -154,7 +183,6 @@
   </div>
   <div class="top-actions">
     <button class="today-btn" id="todayBtn">היום</button>
-    <button class="today-btn" id="googleBtn">🔗 חיבור ל-Google Calendar</button>
   </div>
   <div class="weekday-row" id="weekdayRow"></div>
   <div class="day-grid" id="dayGrid"></div>
@@ -196,6 +224,7 @@
 
 <div class="overlay" id="formOverlay">
   <div class="modal">
+    <div class="modal-drag-handle"></div>
     <div class="modal-head">
       <h2 id="formTitleHead">אירוע חדש</h2>
       <button class="icon-btn" id="closeForm" style="color:var(--muted); font-size:18px;">×</button>
@@ -232,6 +261,29 @@
     <button class="modal-submit" id="formSubmit">שמירה</button>
     <button class="modal-secondary" id="formEmail" style="display:none;">✉️ שליחת פרטי האירוע במייל</button>
     <button class="modal-delete" id="formDelete" style="display:none;">מחיקת אירוע</button>
+  </div>
+</div>
+
+<div class="overlay" id="viewOverlay">
+  <div class="modal">
+    <div class="modal-drag-handle"></div>
+    <div class="modal-head">
+      <div></div>
+      <button class="icon-btn" id="closeView" style="color:var(--muted); font-size:18px;">×</button>
+    </div>
+    <div class="view-title-row"><span class="view-color-dot" id="viewColorDot"></span><h2 id="viewTitle">אירוע</h2></div>
+    <div class="view-subtitle" id="viewLocationSub" style="display:none;"></div>
+    <div class="view-datetime" id="viewDateTime"></div>
+    <div class="view-mini-timeline-wrap" id="viewMiniTimelineWrap" style="display:none;">
+      <div class="view-mini-timeline" id="viewMiniTimeline"></div>
+    </div>
+    <div class="view-notes-section" id="viewNotesSection" style="display:none;">
+      <label>הערות</label>
+      <div class="view-notes" id="viewNotes"></div>
+      <button class="view-notes-toggle" id="viewNotesToggle" style="display:none;">הצגת עוד</button>
+    </div>
+    <button class="modal-submit" id="viewEditBtn">עריכת אירוע</button>
+    <button class="modal-delete" id="viewDeleteBtn">מחיקת אירוע</button>
   </div>
 </div>
 
@@ -278,6 +330,7 @@ let viewYear = now.getFullYear();
 let viewMonth = now.getMonth() + 1;
 let selectedDate = toISO(now);
 let editingId = null;
+let viewingId = null;
 let deleteTargetId = null;
 let selectedColor = "gold";
 
@@ -342,6 +395,65 @@ function hideOverlay(id, duration) {
   setTimeout(() => { el.classList.remove("show", "closing"); }, duration || 190);
   unlockBodyScroll();
 }
+
+// Swipe-down-to-dismiss on bottom-sheet modals: drag the handle bar down;
+// past a threshold (or a fast flick) it closes, otherwise it springs back.
+function attachSheetDragToDismiss(overlayId) {
+  const overlay = document.getElementById(overlayId);
+  const modal = overlay.querySelector(".modal");
+  const triggers = [modal.querySelector(".modal-drag-handle"), modal.querySelector(".modal-head")].filter(Boolean);
+  if (!modal || !triggers.length) return;
+  const DISMISS_PX = 120;
+  let startY = 0, dragging = false, lastY = 0, lastT = 0, velocity = 0, activeTrigger = null;
+
+  triggers.forEach(trigger => {
+    trigger.addEventListener("pointerdown", (ev) => {
+      if (ev.target.closest("button")) return; // let the × button work normally
+      dragging = true;
+      activeTrigger = trigger;
+      startY = lastY = ev.clientY;
+      lastT = performance.now();
+      velocity = 0;
+      modal.style.transition = "none";
+      try { trigger.setPointerCapture(ev.pointerId); } catch(e) {}
+    });
+    trigger.addEventListener("pointermove", (ev) => {
+      if (!dragging || activeTrigger !== trigger) return;
+      ev.preventDefault();
+      const dy = Math.max(0, ev.clientY - startY);
+      const now = performance.now();
+      const dt = now - lastT;
+      if (dt > 0) velocity = (ev.clientY - lastY) / dt;
+      lastY = ev.clientY; lastT = now;
+      modal.style.transform = `translateY(${dy}px)`;
+    });
+    const finish = (ev) => {
+      if (!dragging || activeTrigger !== trigger) return;
+      dragging = false;
+      activeTrigger = null;
+      const dy = Math.max(0, (ev.clientY || lastY) - startY);
+      modal.style.transition = "transform .2s ease";
+      if (dy > DISMISS_PX || velocity > 1.2) {
+        modal.style.transform = "translateY(100%)";
+        overlay.style.transition = "opacity .2s ease";
+        overlay.style.opacity = "0";
+        setTimeout(() => {
+          overlay.classList.remove("show");
+          overlay.style.opacity = ""; overlay.style.transition = "";
+          modal.style.transform = ""; modal.style.transition = "";
+          unlockBodyScroll();
+        }, 200);
+      } else {
+        modal.style.transform = "translateY(0)";
+        setTimeout(() => { modal.style.transition = ""; modal.style.transform = ""; }, 200);
+      }
+    };
+    trigger.addEventListener("pointerup", finish);
+    trigger.addEventListener("pointercancel", finish);
+  });
+}
+["formOverlay", "viewOverlay"].forEach(attachSheetDragToDismiss);
+
 function pad2(n) { return String(n).padStart(2,"0"); }
 function addDaysISO(dateStr, n) {
   const [y,m,d] = dateStr.split("-").map(Number);
@@ -445,10 +557,7 @@ function renderMonthAgenda() {
     </div>
   `).join("");
   wrap.querySelectorAll(".event-item").forEach(item => {
-    item.addEventListener("click", () => openEdit(item.dataset.id));
-  });
-  wrap.querySelectorAll(".event-location").forEach(loc => {
-    loc.addEventListener("click", (ev) => { ev.stopPropagation(); openInMaps(loc.dataset.loc); });
+    item.addEventListener("click", () => openView(item.dataset.id));
   });
 }
 
@@ -562,9 +671,7 @@ function renderTimelineEvents(timedEvents) {
     el.addEventListener("click", (ev) => {
       if (el.dataset.justDragged === "1") { el.dataset.justDragged = ""; return; }
       if (ev.target.closest(".te-handle")) return;
-      const locEl = ev.target.closest(".te-location");
-      if (locEl) { openInMaps(locEl.dataset.loc); return; }
-      openEdit(el.dataset.id);
+      openView(el.dataset.id);
     });
     attachEventDrag(el);
     el.querySelectorAll(".te-handle").forEach(handle => attachHandleDrag(el, handle));
@@ -886,6 +993,100 @@ function nearestRoundHourTimes() {
   return { start: pad2(startHour) + ":00", end: pad2(endHour) + ":00" };
 }
 
+function linkifyNotes(text) {
+  const escaped = escapeHtml(text);
+  return escaped.replace(/(https?:\/\/[^\s<]+)/g, (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+}
+
+function renderMiniTimeline(e) {
+  const wrap = document.getElementById("viewMiniTimelineWrap");
+  const el = document.getElementById("viewMiniTimeline");
+  if (e.allDay || eventEndDate(e) !== e.date || !e.startTime) { wrap.style.display = "none"; return; }
+  const s = timeToMinutes(e.startTime);
+  const en = Math.max(timeToMinutes(e.endTime || e.startTime), s + 15);
+  let winStart = s - 60, winEnd = en + 60;
+  const minSpan = 180;
+  if (winEnd - winStart < minSpan) {
+    const pad = (minSpan - (winEnd - winStart)) / 2;
+    winStart -= pad; winEnd += pad;
+  }
+  winStart = Math.max(0, winStart);
+  winEnd = Math.min(1440, winEnd);
+  const containerH = 140;
+  const pxPerMin = containerH / (winEnd - winStart);
+
+  let html = "";
+  const firstHour = Math.ceil(winStart / 60);
+  const lastHour = Math.floor(winEnd / 60);
+  for (let h = firstHour; h <= lastHour; h++) {
+    const top = (h * 60 - winStart) * pxPerMin;
+    html += `<div class="mini-hour-line" style="top:${top}px;"></div><span class="mini-hour-label" style="top:${top - 8}px;">${h}:00</span>`;
+  }
+  const evTop = (s - winStart) * pxPerMin;
+  const evHeight = Math.max((en - s) * pxPerMin, 24);
+  html += `<div class="mini-event-block" style="top:${evTop}px; height:${evHeight}px; background:${colorValue(e.color)};">
+    <div class="mini-event-title">${escapeHtml(e.title || "")}</div>
+    ${e.location ? `<div class="mini-event-loc">📍 ${escapeHtml(e.location)}</div>` : ""}
+    <div class="mini-event-time">${minutesToTime(s)} - ${minutesToTime(en)}</div>
+  </div>`;
+  el.innerHTML = html;
+  wrap.style.display = "block";
+}
+
+function openView(id) {
+  const e = events.find(x => x.id === id);
+  if (!e) return;
+  viewingId = id;
+  document.getElementById("viewTitle").textContent = e.title || "(ללא כותרת)";
+  document.getElementById("viewColorDot").style.background = colorValue(e.color);
+
+  const endDate = eventEndDate(e);
+  let dtText;
+  if (e.allDay) {
+    dtText = endDate !== e.date ? `${formatAgendaLabel(e.date)} – ${formatAgendaLabel(endDate)} (כל היום)` : `${formatAgendaLabel(e.date)} (כל היום)`;
+  } else if (endDate !== e.date) {
+    dtText = `${formatAgendaLabel(e.date)} ${e.startTime || ""} – ${formatAgendaLabel(endDate)} ${e.endTime || ""}`;
+  } else {
+    dtText = `${formatAgendaLabel(e.date)}, ${e.startTime || ""} - ${e.endTime || ""}`;
+  }
+  document.getElementById("viewDateTime").textContent = dtText;
+
+  const locSub = document.getElementById("viewLocationSub");
+  if (e.location) {
+    locSub.style.display = "block";
+    locSub.textContent = "📍 " + e.location;
+    locSub.onclick = () => openInMaps(e.location);
+  } else {
+    locSub.style.display = "none";
+    locSub.onclick = null;
+  }
+
+  renderMiniTimeline(e);
+
+  const notesSection = document.getElementById("viewNotesSection");
+  const notesEl = document.getElementById("viewNotes");
+  const toggleBtn = document.getElementById("viewNotesToggle");
+  if (e.notes) {
+    notesSection.style.display = "block";
+    notesEl.innerHTML = linkifyNotes(e.notes);
+    notesEl.classList.remove("expanded");
+    toggleBtn.textContent = "הצגת עוד";
+    toggleBtn.style.display = "none";
+    requestAnimationFrame(() => {
+      if (notesEl.scrollHeight > notesEl.clientHeight + 4) toggleBtn.style.display = "block";
+    });
+  } else {
+    notesSection.style.display = "none";
+  }
+
+  showOverlay("viewOverlay");
+}
+document.getElementById("viewNotesToggle").addEventListener("click", () => {
+  const notesEl = document.getElementById("viewNotes");
+  const expanded = notesEl.classList.toggle("expanded");
+  document.getElementById("viewNotesToggle").textContent = expanded ? "הצגת פחות" : "הצגת עוד";
+});
+
 function openAdd() {
   editingId = null;
   document.getElementById("formTitleHead").textContent = "אירוע חדש";
@@ -1088,7 +1289,7 @@ document.getElementById("openMapBtn").addEventListener("click", () => {
         const results = await res.json();
         box.innerHTML = CURRENT_LOC_HTML + results.map(r => {
           const a = r.address || {};
-          const road = a.road || a.pedestrian || a.footway || "";
+          const road = a.road || a.pedestrian || a.footway || a.residential || a.street || a.path || a.living_street || "";
           const houseNum = a.house_number || "";
           const city = a.city || a.town || a.village || a.municipality || "";
           const clean = (road && houseNum) ? `${road} ${houseNum}${city ? ", " + city : ""}` : r.display_name;
@@ -1146,6 +1347,18 @@ document.getElementById("formSubmit").addEventListener("click", () => {
   hideOverlay("formOverlay");
   renderCalendar();
   renderAgenda();
+});
+
+document.getElementById("closeView").addEventListener("click", () => hideOverlay("viewOverlay"));
+document.getElementById("viewOverlay").addEventListener("click", (e) => { if (e.target.id === "viewOverlay") hideOverlay("viewOverlay"); });
+document.getElementById("viewEditBtn").addEventListener("click", () => {
+  hideOverlay("viewOverlay");
+  openEdit(viewingId);
+});
+document.getElementById("viewDeleteBtn").addEventListener("click", () => {
+  deleteTargetId = viewingId;
+  hideOverlay("viewOverlay");
+  showOverlay("deleteOverlay");
 });
 
 document.getElementById("formDelete").addEventListener("click", () => {
@@ -1214,8 +1427,8 @@ function showToast(msg) {
 // ===== Google Calendar sync =====
 function updateGoogleButton() {
   const btn = document.getElementById("googleBtn");
-  btn.textContent = googleConnected ? "✓ מחובר ל-Google Calendar" : "🔗 חיבור ל-Google Calendar";
   btn.classList.toggle("connected", googleConnected);
+  btn.title = googleConnected ? "מחובר ל-Google Calendar" : "חיבור ל-Google Calendar";
 }
 
 function startGoogleConnect() {
