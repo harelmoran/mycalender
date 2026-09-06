@@ -126,8 +126,14 @@
   .hour-label { position:absolute; right:2px; font-size:11px; color: var(--muted); background: var(--bg); padding: 0 2px; z-index:1; }
   .half-line { position:absolute; left:0; right:56px; height:0; border-top:1px solid rgba(156,163,175,0.15); }
   .timeline-events { position:absolute; top:0; left:0; right:58px; bottom:0; }
-  .timeline-event { position:absolute; border-radius:8px; padding:4px 8px; overflow:hidden; cursor:pointer; box-sizing:border-box; touch-action:none; transition: box-shadow .15s ease; }
+  .timeline-event { position:absolute; border-radius:8px; padding:4px 8px; overflow:hidden; cursor:pointer; box-sizing:border-box; touch-action:none; transition: box-shadow .15s ease; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; -webkit-user-drag:none; }
   .timeline-event.dragging { opacity:.9; box-shadow:0 8px 20px rgba(0,0,0,.5); z-index:6; transition:none; }
+  .timeline-event.edit-mode { outline: 2px solid #fff; outline-offset:1px; z-index:6; }
+  .te-handle { position:absolute; left:50%; transform:translateX(50%); width:34px; height:18px; background:#fff; border-radius:9px; box-shadow:0 2px 6px rgba(0,0,0,.5); touch-action:none; z-index:7; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  .te-handle::after { content:""; position:absolute; left:50%; top:50%; width:16px; height:3px; background:#8a8f99; border-radius:2px; transform:translate(50%,-50%); }
+  .te-handle-top { top:-9px; }
+  .te-handle-bottom { bottom:-9px; }
+  .drag-time-label { position:absolute; right:2px; font-size:12px; font-weight:800; color:#1b1406; background: var(--gold); padding:2px 6px; border-radius:6px; z-index:8; pointer-events:none; }
   .timeline-event .te-title { font-size:12px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .timeline-event .te-time { font-size:10px; color:rgba(255,255,255,.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .now-line { position:absolute; left:0; right:56px; height:0; border-top:2px solid var(--danger); z-index:2; }
@@ -174,6 +180,7 @@
       <div class="timeline-grid" id="timelineGrid"></div>
       <div class="timeline-events" id="timelineEvents"></div>
       <div class="now-line" id="nowLine" style="display:none;"><span class="now-dot"></span></div>
+      <div class="drag-time-label" id="dragTimeLabel" style="display:none;"></div>
     </div>
   </div>
 </div>
@@ -307,6 +314,11 @@ function showOverlay(id) {
 function fitToVisualViewport(el) {
   const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
   el.style.height = h + "px";
+  const content = el.querySelector(".day-view-content");
+  if (content) {
+    const contentTop = content.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    content.style.height = Math.max(h - contentTop, 100) + "px";
+  }
 }
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", () => {
@@ -462,7 +474,10 @@ function renderAgenda() {
     document.getElementById("dayViewMonthLabel").textContent = formatAgendaLabel(selectedDate);
     renderWeekStrip();
     animateDayChange();
-    scrollTimelineToRelevantTime();
+    // Only auto-scroll to "now"/7am when actually switching to a different
+    // day — not on every re-render (e.g. after dragging/resizing an event),
+    // which was yanking the view back up mid-interaction.
+    if (selectedDate !== lastSelectedDate) scrollTimelineToRelevantTime();
   }
   lastSelectedDate = selectedDate;
 }
@@ -497,6 +512,8 @@ function renderTimelineGrid() {
   grid.innerHTML = html;
 }
 
+let editModeEventId = null;
+
 function renderTimelineEvents(timedEvents) {
   const wrap = document.getElementById("timelineEvents");
   const withTimes = timedEvents.map(e => {
@@ -524,26 +541,59 @@ function renderTimelineEvents(timedEvents) {
     const height = Math.max(((end - start) / 60) * HOUR_H, 22);
     const widthPct = 100 / totalCols;
     const leftPct = col * widthPct;
-    return `<div class="timeline-event" data-id="${e.id}" style="top:${top}px; height:${height}px; right:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); background:${colorValue(e.color)};">
+    const editable = e.id === editModeEventId;
+    return `<div class="timeline-event${editable ? " edit-mode" : ""}" data-id="${e.id}" style="top:${top}px; height:${height}px; right:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); background:${colorValue(e.color)};">
       <div class="te-title">${escapeHtml(e.title)}</div>
       <div class="te-time">${segmentLabel(e, selectedDate)}</div>
       ${e.location && height > 40 ? `<div class="te-time">📍 ${escapeHtml(e.location)}</div>` : ""}
+      ${editable ? `<div class="te-handle te-handle-top" data-handle="start"></div><div class="te-handle te-handle-bottom" data-handle="end"></div>` : ""}
     </div>`;
   }).join("");
   wrap.querySelectorAll(".timeline-event").forEach(el => {
-    el.addEventListener("click", () => {
+    el.addEventListener("click", (ev) => {
       if (el.dataset.justDragged === "1") { el.dataset.justDragged = ""; return; }
+      if (ev.target.closest(".te-handle")) return;
       openEdit(el.dataset.id);
     });
     attachEventDrag(el);
+    el.querySelectorAll(".te-handle").forEach(handle => attachHandleDrag(el, handle));
   });
 }
 
-// Long-press + drag on a timeline event to move it earlier/later (preserves
-// duration; snaps to 5-minute increments). Only single-day events support
-// this — multi-day segments have no single well-defined start/end to drag.
+// Long-press an event to enter "edit mode" (outline + two resize handles).
+// While in edit mode, dragging the body moves the event (preserving
+// duration); dragging a handle resizes its start or end. Snaps to 15-minute
+// increments. Edit mode stays on after you lift your finger — it only
+// clears when you tap elsewhere on the screen. Single-day events only.
 const DRAG_LONG_PRESS_MS = 350;
-const DRAG_SNAP_MIN = 5;
+const DRAG_SNAP_MIN = 15;
+
+function showDragTimeLabel(topPx, text) {
+  const label = document.getElementById("dragTimeLabel");
+  label.style.top = (topPx - 10) + "px";
+  label.textContent = text;
+  label.style.display = "block";
+}
+function hideDragTimeLabel() {
+  document.getElementById("dragTimeLabel").style.display = "none";
+}
+
+function enterEditMode(id) {
+  if (editModeEventId === id) return;
+  editModeEventId = id;
+  renderAgenda();
+}
+function exitEditMode() {
+  if (editModeEventId === null) return;
+  editModeEventId = null;
+  renderAgenda();
+}
+document.addEventListener("pointerdown", (ev) => {
+  if (editModeEventId === null) return;
+  if (ev.target.closest(`.timeline-event[data-id="${editModeEventId}"]`)) return;
+  exitEditMode();
+}, { capture: true });
+
 function attachEventDrag(el) {
   let pressTimer = null;
   let dragging = false;
@@ -554,21 +604,34 @@ function attachEventDrag(el) {
 
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
 
+  const beginDrag = (ev, ev_) => {
+    dragging = true;
+    el.classList.add("dragging");
+    try { el.setPointerCapture(ev.pointerId); } catch(e) {}
+    startMin = timeToMinutes(ev_.startTime || "00:00");
+    durationMin = Math.max(timeToMinutes(ev_.endTime || ev_.startTime || "00:00") - startMin, DRAG_SNAP_MIN);
+    if (navigator.vibrate) navigator.vibrate(8);
+  };
+
   el.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest(".te-handle")) return;
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
     const ev_ = events.find(x => x.id === el.dataset.id);
     if (!ev_ || ev_.allDay || ev_.date !== eventEndDate(ev_)) return; // skip all-day / multi-day
+    ev.preventDefault();
     moved = false;
     startY = ev.clientY;
     cancelPress();
-    pressTimer = setTimeout(() => {
-      dragging = true;
-      el.classList.add("dragging");
-      try { el.setPointerCapture(ev.pointerId); } catch(e) {}
-      startMin = timeToMinutes(ev_.startTime || "00:00");
-      durationMin = Math.max(timeToMinutes(ev_.endTime || ev_.startTime || "00:00") - startMin, 5);
-      if (navigator.vibrate) navigator.vibrate(8);
-    }, DRAG_LONG_PRESS_MS);
+    if (el.dataset.id === editModeEventId) {
+      // already in edit mode — move immediately, no long-press needed
+      beginDrag(ev, ev_);
+    } else {
+      pressTimer = setTimeout(() => {
+        editModeEventId = el.dataset.id;
+        el.classList.add("edit-mode");
+        beginDrag(ev, ev_);
+      }, DRAG_LONG_PRESS_MS);
+    }
   });
 
   el.addEventListener("pointermove", (ev) => {
@@ -581,9 +644,11 @@ function attachEventDrag(el) {
     const deltaY = ev.clientY - startY;
     let newStart = startMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
     newStart = Math.max(0, Math.min(newStart, 1440 - durationMin));
-    el.style.top = ((newStart / 60) * HOUR_H) + "px";
+    const topPx = (newStart / 60) * HOUR_H;
+    el.style.top = topPx + "px";
     const timeEl = el.querySelector(".te-time");
     if (timeEl) timeEl.textContent = minutesToTime(newStart) + " - " + minutesToTime(newStart + durationMin);
+    showDragTimeLabel(topPx, minutesToTime(newStart));
     el._pendingStart = newStart;
   });
 
@@ -592,6 +657,7 @@ function attachEventDrag(el) {
     if (!dragging) return;
     dragging = false;
     el.classList.remove("dragging");
+    hideDragTimeLabel();
     if (moved && el._pendingStart != null) {
       const ev_ = events.find(x => x.id === el.dataset.id);
       if (ev_) {
@@ -601,12 +667,78 @@ function attachEventDrag(el) {
         pushUpdateToGoogle(ev_);
       }
       el.dataset.justDragged = "1";
-      renderAgenda();
     }
     el._pendingStart = null;
+    renderAgenda(); // refresh so edit-mode handles reflect current state either way
   };
   el.addEventListener("pointerup", finishDrag);
   el.addEventListener("pointercancel", finishDrag);
+}
+
+// Resize handles (top = adjust start, bottom = adjust end). Only present
+// while the event is already in edit mode, so no long-press needed here.
+function attachHandleDrag(el, handle) {
+  const which = handle.dataset.handle; // "start" or "end"
+  let dragging = false, startY = 0, fixedMin = 0, otherMin = 0;
+
+  handle.addEventListener("pointerdown", (ev) => {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const ev_ = events.find(x => x.id === el.dataset.id);
+    if (!ev_) return;
+    dragging = true;
+    startY = ev.clientY;
+    try { handle.setPointerCapture(ev.pointerId); } catch(e) {}
+    const s = timeToMinutes(ev_.startTime || "00:00");
+    const e_ = timeToMinutes(ev_.endTime || ev_.startTime || "00:00");
+    if (which === "start") { fixedMin = e_; otherMin = s; } else { fixedMin = s; otherMin = e_; }
+    el.classList.add("dragging");
+  });
+
+  handle.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const deltaY = ev.clientY - startY;
+    let newVal = otherMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+    if (which === "start") {
+      newVal = Math.max(0, Math.min(newVal, fixedMin - DRAG_SNAP_MIN));
+      el.style.top = ((newVal / 60) * HOUR_H) + "px";
+      el.style.height = Math.max(((fixedMin - newVal) / 60) * HOUR_H, 22) + "px";
+    } else {
+      newVal = Math.min(1440, Math.max(newVal, fixedMin + DRAG_SNAP_MIN));
+      el.style.height = Math.max(((newVal - fixedMin) / 60) * HOUR_H, 22) + "px";
+    }
+    const timeEl = el.querySelector(".te-time");
+    if (timeEl) timeEl.textContent = which === "start"
+      ? (minutesToTime(newVal) + " - " + minutesToTime(fixedMin))
+      : (minutesToTime(fixedMin) + " - " + minutesToTime(newVal));
+    const labelTop = which === "start" ? (newVal / 60) * HOUR_H : (newVal / 60) * HOUR_H;
+    showDragTimeLabel(labelTop, minutesToTime(newVal));
+    el._pendingHandleVal = newVal;
+  });
+
+  const finishHandleDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    hideDragTimeLabel();
+    if (el._pendingHandleVal != null) {
+      const ev_ = events.find(x => x.id === el.dataset.id);
+      if (ev_) {
+        if (which === "start") { ev_.startTime = minutesToTime(el._pendingHandleVal); ev_.endTime = minutesToTime(fixedMin); }
+        else { ev_.startTime = minutesToTime(fixedMin); ev_.endTime = minutesToTime(el._pendingHandleVal); }
+        persist();
+        pushUpdateToGoogle(ev_);
+      }
+      el.dataset.justDragged = "1";
+      renderAgenda();
+    }
+    el._pendingHandleVal = null;
+  };
+  handle.addEventListener("pointerup", finishHandleDrag);
+  handle.addEventListener("pointercancel", finishHandleDrag);
 }
 
 function renderNowLine() {
@@ -691,8 +823,8 @@ document.getElementById("dayViewAdd").addEventListener("click", openAdd);
     const dy = e.changedTouches[0].clientY - touchStartY;
     touchStartX = null;
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      // RTL layout: swipe right (dx > 0) = go to previous day, swipe left = next day
-      selectedDate = isoAddDays(selectedDate, dx > 0 ? -1 : 1);
+      // RTL layout: swipe right-to-left = next day, swipe left-to-right = previous day
+      selectedDate = isoAddDays(selectedDate, dx > 0 ? 1 : -1);
       const [y,m] = selectedDate.split("-").map(Number);
       viewYear = y; viewMonth = m;
       renderAgenda();
