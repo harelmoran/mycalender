@@ -163,8 +163,8 @@
   .half-line { position:absolute; left:0; right:56px; height:0; border-top:1px solid rgba(156,163,175,0.15); }
   .timeline-events { position:absolute; top:0; left:0; right:58px; bottom:0; }
   .timeline-event { position:absolute; border-radius:8px; padding:4px 8px; overflow:hidden; cursor:pointer; box-sizing:border-box; touch-action:none; transition: box-shadow .15s ease; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; -webkit-user-drag:none; }
-  .timeline-event.dragging { opacity:.9; box-shadow:0 8px 20px rgba(0,0,0,.5); z-index:6; transition:none; }
-  .timeline-event.edit-mode { outline: 2px solid #fff; outline-offset:1px; z-index:6; }
+  .timeline-event.dragging { opacity:.97; box-shadow:0 10px 26px rgba(0,0,0,.55); z-index:6; transition:none; filter:brightness(1.12) saturate(1.25); transform:scale(1.035); }
+  .timeline-event.edit-mode { outline: 2px solid #fff; outline-offset:1px; z-index:6; filter:brightness(1.08) saturate(1.15); box-shadow:0 6px 18px rgba(0,0,0,.4); transition: filter .15s ease, box-shadow .15s ease; }
   .te-handle { position:absolute; left:50%; transform:translateX(50%); width:34px; height:18px; background:#fff; border-radius:9px; box-shadow:0 2px 6px rgba(0,0,0,.5); touch-action:none; z-index:7; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
   .te-handle::after { content:""; position:absolute; left:50%; top:50%; width:16px; height:3px; background:#8a8f99; border-radius:2px; transform:translate(50%,-50%); }
   .te-handle-top { top:-9px; }
