@@ -152,7 +152,7 @@
   .day-view-content { flex:1; overflow-y:auto; overscroll-behavior: contain; padding: 0 0 calc(20px + env(safe-area-inset-bottom)); touch-action: pan-y; }
   .allday-chips-row { display:flex; flex-wrap:wrap; gap:6px; margin: 0 16px 8px; }
   .allday-chip { font-size:12px; font-weight:700; padding:5px 10px; border-radius:8px; color:#fff; }
-  .timeline-wrap { position:relative; height: 1440px; margin: 0 16px; transition: opacity .12s ease; }
+  .timeline-wrap { position:relative; height: 1440px; margin: 0 16px; transition: opacity .12s ease; touch-action: none; }
   .anim-next { animation: slideInLeft .22s ease; }
   .anim-prev { animation: slideInRight .22s ease; }
   @keyframes slideInLeft { from { transform: translateX(24px); opacity:0; } to { transform:none; opacity:1; } }
@@ -497,7 +497,7 @@ function hideOverlay(id, duration) {
 
 // Swipe-down-to-dismiss on bottom-sheet modals: drag the handle bar down;
 // past a threshold (or a fast flick) it closes, otherwise it springs back.
-function attachSheetDragToDismiss(overlayId) {
+function attachSheetDragToDismiss(overlayId, onDismiss) {
   const overlay = document.getElementById(overlayId);
   const modal = overlay.querySelector(".modal");
   const triggers = [modal.querySelector(".modal-drag-handle"), modal.querySelector(".modal-head")].filter(Boolean);
@@ -541,6 +541,7 @@ function attachSheetDragToDismiss(overlayId) {
           overlay.style.opacity = ""; overlay.style.transition = "";
           modal.style.transform = ""; modal.style.transition = "";
           unlockBodyScroll();
+          if (onDismiss) onDismiss();
         }, 200);
       } else {
         modal.style.transform = "translateY(0)";
@@ -551,7 +552,17 @@ function attachSheetDragToDismiss(overlayId) {
     trigger.addEventListener("pointercancel", finish);
   });
 }
-["formOverlay", "viewOverlay"].forEach(attachSheetDragToDismiss);
+function discardEmptyDraft() {
+  if (!editingId) return;
+  const ev_ = events.find(x => x.id === editingId);
+  if (ev_ && !ev_.title.trim()) {
+    events = events.filter(x => x.id !== editingId);
+    persist();
+    renderAgenda();
+  }
+}
+attachSheetDragToDismiss("formOverlay", discardEmptyDraft);
+attachSheetDragToDismiss("viewOverlay");
 
 function pad2(n) { return String(n).padStart(2,"0"); }
 function addDaysISO(dateStr, n) {
@@ -884,6 +895,27 @@ document.addEventListener("pointermove", (ev) => {
     showDragTimeLabel(topPx, minutesToTime(newStart));
     dragSession.pendingStart = newStart;
 
+    // Dragging your finger up onto the week-strip and over a specific day
+    // jumps straight to that day (any day, not just adjacent) — switches the
+    // instant your finger enters that day's cell, no hold needed, since
+    // moving up there is already the deliberate "pick this day" gesture.
+    const stripEl = document.getElementById("weekStrip");
+    if (stripEl) {
+      const stripRect = stripEl.getBoundingClientRect();
+      if (ev.clientY >= stripRect.top - 10 && ev.clientY <= stripRect.bottom + 10) {
+        const cells = stripEl.querySelectorAll(".wd-cell");
+        for (const cell of cells) {
+          const cr = cell.getBoundingClientRect();
+          if (ev.clientX >= cr.left && ev.clientX <= cr.right) {
+            if (cell.dataset.date !== selectedDate) switchDragToDate(cell.dataset.date, ev.pointerId);
+            break;
+          }
+        }
+        dragSession.edgeDir = null; dragSession.edgeSince = null;
+        return;
+      }
+    }
+
     // Hold near the left/right edge of the day view to flip to the
     // next/previous day without letting go (matches the swipe convention:
     // near the left edge = next day, near the right edge = previous day).
@@ -904,11 +936,11 @@ document.addEventListener("pointermove", (ev) => {
   });
 });
 
-function switchDragToDay(deltaDays, pointerId) {
+function switchDragToDate(newDate, pointerId) {
   if (!dragSession) return;
+  if (newDate === selectedDate) return;
   const ev_ = events.find(x => x.id === dragSession.id);
   if (!ev_) return;
-  const newDate = isoAddDays(selectedDate, deltaDays);
   const wasSingleDay = ev_.date === eventEndDate(ev_);
   ev_.date = newDate;
   if (wasSingleDay) ev_.endDate = newDate;
@@ -926,6 +958,9 @@ function switchDragToDay(deltaDays, pointerId) {
   dragSession.edgeDir = null;
   dragSession.edgeSince = null;
   if (navigator.vibrate) navigator.vibrate(10);
+}
+function switchDragToDay(deltaDays, pointerId) {
+  switchDragToDate(isoAddDays(selectedDate, deltaDays), pointerId);
 }
 
 function finishDragSession() {
@@ -1173,6 +1208,92 @@ document.getElementById("dayViewAdd").addEventListener("click", openAdd);
   }, { passive: true });
 })();
 
+// Long-press an empty spot on the timeline to create a new event block right
+// there (30-minute default). While still holding, dragging up/down lengthens
+// or shortens it live; releasing opens the edit form to fill in the title.
+// Runs at the document level (not on the wrap itself) so it can't race with
+// the newly-created draft's own click/drag handlers once it renders mid-hold.
+let createSession = null; // { draftId, startY, startMin, pendingEnd }
+(function() {
+  let pressTimer = null;
+  let armStartY = null, armStartX = null, armPointerId = null;
+  let lastMoveY = null, manualScrolling = false;
+  const wrap = document.getElementById("timelineWrap");
+  const scrollEl = document.getElementById("dayViewContent");
+  const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+
+  wrap.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest(".timeline-event") || ev.target.closest("#eventContextMenu")) return;
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    armStartY = ev.clientY; armStartX = ev.clientX; armPointerId = ev.pointerId;
+    lastMoveY = ev.clientY;
+    manualScrolling = false;
+    cancelPress();
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      const rect = wrap.getBoundingClientRect();
+      const offsetY = armStartY - rect.top;
+      let minutes = Math.round((offsetY / HOUR_H * 60) / 30) * 30;
+      minutes = Math.max(0, Math.min(minutes, 1410));
+      const newEvent = {
+        id: uid(), title: "", date: selectedDate, endDate: selectedDate, allDay: false,
+        startTime: minutesToTime(minutes), endTime: minutesToTime(Math.min(minutes + 30, 1439)),
+        location: "", notes: "", color: selectedColor || "gold", googleEventId: null, createdAt: Date.now()
+      };
+      events.push(newEvent);
+      persist();
+      renderAgenda();
+      createSession = { draftId: newEvent.id, startY: armStartY, startMin: minutes, pendingEnd: null };
+      const el = getTimelineEl(newEvent.id);
+      if (el) { el.classList.add("dragging"); try { el.setPointerCapture(armPointerId); } catch(e) {} }
+      if (navigator.vibrate) navigator.vibrate(8);
+    }, DRAG_LONG_PRESS_MS);
+  });
+  // The timeline has touch-action:none (see below for why), so plain
+  // scrolling no longer happens natively — replicate it manually here
+  // whenever the touch isn't a long-press-in-progress.
+  wrap.addEventListener("pointermove", (ev) => {
+    if (createSession) return; // handled at document level below
+    const dy = ev.clientY - lastMoveY;
+    lastMoveY = ev.clientY;
+    if (pressTimer && (Math.abs(ev.clientY - armStartY) > 8 || Math.abs(ev.clientX - armStartX) > 8)) {
+      cancelPress();
+      manualScrolling = true;
+    }
+    if (manualScrolling && scrollEl) scrollEl.scrollTop -= dy;
+  });
+  wrap.addEventListener("pointerup", () => { cancelPress(); manualScrolling = false; });
+  wrap.addEventListener("pointercancel", () => { cancelPress(); manualScrolling = false; });
+})();
+
+document.addEventListener("pointermove", (ev) => {
+  if (!createSession) return;
+  ev.preventDefault();
+  const el = getTimelineEl(createSession.draftId);
+  if (!el) return;
+  const deltaY = ev.clientY - createSession.startY;
+  let endMin = createSession.startMin + 30 + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+  endMin = Math.max(createSession.startMin + 15, Math.min(endMin, 1440));
+  createSession.pendingEnd = endMin;
+  el.style.height = Math.max(((endMin - createSession.startMin) / 60) * HOUR_H, 22) + "px";
+  const timeEl = el.querySelector(".te-time");
+  if (timeEl) timeEl.textContent = minutesToTime(createSession.startMin) + " - " + minutesToTime(endMin);
+  showDragTimeLabel((endMin / 60) * HOUR_H, minutesToTime(endMin));
+});
+function finishCreateSession() {
+  if (!createSession) return;
+  const { draftId, pendingEnd } = createSession;
+  hideDragTimeLabel();
+  const el = getTimelineEl(draftId);
+  if (el) { el.classList.remove("dragging"); el.dataset.justDragged = "1"; }
+  const ev_ = events.find(x => x.id === draftId);
+  if (ev_ && pendingEnd != null) { ev_.endTime = minutesToTime(pendingEnd); persist(); }
+  createSession = null;
+  openEdit(draftId);
+}
+document.addEventListener("pointerup", finishCreateSession);
+document.addEventListener("pointercancel", finishCreateSession);
+
 function updateAllDayUI() {
   const isAllDay = document.getElementById("formAllDay").checked;
   document.getElementById("startDateTimeRow").classList.toggle("no-time", isAllDay);
@@ -1297,14 +1418,16 @@ document.getElementById("viewNotesToggle").addEventListener("click", () => {
   document.getElementById("viewNotesToggle").textContent = expanded ? "הצגת פחות" : "הצגת עוד";
 });
 
-function openAdd() {
+function openAdd(startTimeOverride) {
   editingId = null;
   document.getElementById("formTitleHead").textContent = "אירוע חדש";
   document.getElementById("formTitle").value = "";
   document.getElementById("formDate").value = selectedDate;
   document.getElementById("formEndDate").value = selectedDate;
   document.getElementById("formAllDay").checked = false;
-  const defaults = nearestRoundHourTimes();
+  const defaults = startTimeOverride
+    ? { start: startTimeOverride, end: minutesToTime(Math.min(timeToMinutes(startTimeOverride) + 30, 1439)) }
+    : nearestRoundHourTimes();
   document.getElementById("formStart").value = defaults.start;
   document.getElementById("formEnd").value = defaults.end;
   document.getElementById("formNotes").value = "";
@@ -1428,8 +1551,8 @@ function openAddFromParsed(p) {
   updateAllDayUI();
 }
 
-document.getElementById("closeForm").addEventListener("click", () => hideOverlay("formOverlay"));
-document.getElementById("formOverlay").addEventListener("click", (e) => { if (e.target.id === "formOverlay") hideOverlay("formOverlay"); });
+document.getElementById("closeForm").addEventListener("click", () => { discardEmptyDraft(); hideOverlay("formOverlay"); });
+document.getElementById("formOverlay").addEventListener("click", (e) => { if (e.target.id === "formOverlay") { discardEmptyDraft(); hideOverlay("formOverlay"); } });
 
 function openInMaps(loc) {
   if (!loc) return;
