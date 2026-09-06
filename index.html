@@ -85,8 +85,13 @@
   .datetime-row.no-time .dt-divider, .datetime-row.no-time .dt-time { display:none; }
   .color-row { display:flex; gap:10px; margin-top:6px; }
   .color-swatch { width:30px; height:30px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
-  .location-row { display:flex; gap:8px; align-items:center; }
+  .location-row { display:flex; gap:8px; align-items:center; position:relative; }
   .location-row input { flex:1; margin-bottom:0 !important; }
+  .loc-suggestions { position:relative; margin-top:-8px; margin-bottom:12px; background: var(--surface2); border-radius:10px; overflow:hidden; max-height:180px; overflow-y:auto; box-shadow:0 6px 16px rgba(0,0,0,.35); }
+  .loc-suggestion-item { padding:10px 12px; font-size:13px; border-bottom:1px solid rgba(255,255,255,.06); cursor:pointer; }
+  .loc-suggestion-item:last-child { border-bottom:none; }
+  .loc-suggestion-item:active { background: rgba(255,255,255,.08); }
+  .loc-suggestion-item.loc-current { color: var(--gold); font-weight:700; }
   .map-btn { flex-shrink:0; width:44px; height:44px; border-radius:10px; border:1px solid var(--surface2); background: var(--surface2); font-size:18px; cursor:pointer; }
   .color-swatch.selected { border-color: var(--ink); }
   .modal-submit { width:100%; margin-top:18px; padding:13px; border:none; border-radius:12px; background: var(--gold); color:#1b1406; font-size:15px; font-weight:800; cursor:pointer; }
@@ -217,9 +222,10 @@
     <div class="color-row" id="colorRow"></div>
     <label>מיקום</label>
     <div class="location-row">
-      <input type="text" id="formLocation" placeholder="למשל: רחוב הרצל 12, תל אביב">
+      <input type="text" id="formLocation" placeholder="למשל: רחוב הרצל 12, תל אביב" autocomplete="off">
       <button type="button" class="map-btn" id="openMapBtn" title="פתיחה במפות">📍</button>
     </div>
+    <div class="loc-suggestions" id="locSuggestions" style="display:none;"></div>
     <label>הערות</label>
     <textarea id="formNotes" placeholder="פרטים נוספים (לא חובה)"></textarea>
     <p class="form-error" id="formError" style="display:none;"></p>
@@ -1021,6 +1027,81 @@ function openInMaps(loc) {
 document.getElementById("openMapBtn").addEventListener("click", () => {
   openInMaps(document.getElementById("formLocation").value.trim());
 });
+
+// Address autocomplete via OpenStreetMap's free Nominatim search (no API
+// key/billing needed), plus a "current location" option (using the phone's
+// GPS + reverse geocoding) — the closest we can get in a web app to the
+// native iOS location picker, since we can't access Contacts/system Maps
+// from a browser. Debounced, and cancels any in-flight request before
+// starting a new one, to stay well within Nominatim's usage policy.
+(function() {
+  const input = document.getElementById("formLocation");
+  const box = document.getElementById("locSuggestions");
+  let debounceTimer = null;
+  let controller = null;
+
+  const CURRENT_LOC_HTML = `<div class="loc-suggestion-item loc-current" data-current="1">📍 מיקום נוכחי</div>`;
+
+  function hideSuggestions() { box.style.display = "none"; box.innerHTML = ""; }
+
+  function attachCurrentLocationHandler() {
+    const el = box.querySelector(".loc-current");
+    if (!el) return;
+    el.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      if (!navigator.geolocation) { showToast("איתור מיקום לא נתמך בדפדפן הזה"); hideSuggestions(); return; }
+      hideSuggestions();
+      showToast("מאתר את המיקום שלך...");
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        try {
+          const { latitude, longitude } = pos.coords;
+          const url = `https://nominatim.openstreetmap.org/reverse?format=json&accept-language=he&lat=${latitude}&lon=${longitude}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          input.value = data.display_name || (latitude.toFixed(5) + ", " + longitude.toFixed(5));
+          showToast("המיקום מולא");
+        } catch (e) { showToast("לא הצלחתי לתרגם את המיקום לכתובת"); }
+      }, () => { showToast("אין גישה למיקום — בדוק הרשאות מיקום למכשיר/דפדפן"); }, { timeout: 8000 });
+    });
+  }
+
+  function showCurrentLocationOnly() {
+    box.innerHTML = CURRENT_LOC_HTML;
+    box.style.display = "block";
+    attachCurrentLocationHandler();
+  }
+
+  input.addEventListener("focus", () => {
+    if (input.value.trim().length < 3) showCurrentLocationOnly();
+  });
+
+  input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    const q = input.value.trim();
+    if (q.length < 3) { showCurrentLocationOnly(); return; }
+    debounceTimer = setTimeout(async () => {
+      if (controller) controller.abort();
+      controller = new AbortController();
+      try {
+        const url = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&accept-language=he&limit=5&q=" + encodeURIComponent(q);
+        const res = await fetch(url, { signal: controller.signal });
+        const results = await res.json();
+        box.innerHTML = CURRENT_LOC_HTML + results.map(r => `<div class="loc-suggestion-item" data-value="${escapeHtml(r.display_name)}">📌 ${escapeHtml(r.display_name)}</div>`).join("");
+        box.style.display = "block";
+        attachCurrentLocationHandler();
+        box.querySelectorAll(".loc-suggestion-item:not(.loc-current)").forEach(item => {
+          item.addEventListener("mousedown", (ev) => {
+            ev.preventDefault(); // keep focus/avoid input blur eating the click
+            input.value = item.dataset.value;
+            hideSuggestions();
+          });
+        });
+      } catch (e) { /* aborted or offline — silently skip, typing still works normally */ }
+    }, 400);
+  });
+
+  input.addEventListener("blur", () => setTimeout(hideSuggestions, 150));
+})();
 
 document.getElementById("formSubmit").addEventListener("click", () => {
   const title = document.getElementById("formTitle").value.trim();
