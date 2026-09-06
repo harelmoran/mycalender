@@ -72,7 +72,7 @@
   .modal-head h2 { margin:0; font-size:18px; }
   .icon-btn { background:none; border:none; cursor:pointer; }
   .modal label { display:block; font-size:12px; color: var(--muted); margin: 10px 0 4px; }
-  .modal input[type=text], .modal input[type=date], .modal input[type=time], .modal textarea { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--surface2); background: var(--surface2); color: var(--ink); font-size:16px; font-family:inherit; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=date], .modal input[type=time], .modal textarea { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--surface2); background: var(--surface2); color: var(--ink); font-size:16px; font-family:inherit; }
   .modal textarea { min-height:80px; resize:vertical; line-height:1.5; }
   .time-row { display:flex; gap:10px; }
   .time-row > div { flex:1; }
@@ -92,11 +92,22 @@
   .loc-suggestion-item { padding:10px 12px; font-size:13px; border-bottom:1px solid rgba(255,255,255,.06); cursor:pointer; }
   .loc-suggestion-item:last-child { border-bottom:none; }
   .loc-suggestion-item:active { background: rgba(255,255,255,.08); }
+  .title-suggestion-item { padding:9px 12px; }
+  .tsi-title { font-weight:700; font-size:14px; color: var(--ink); }
+  .tsi-sub { font-size:12px; color: var(--muted); margin-top:3px; }
   .loc-suggestion-item.loc-current { color: var(--gold); font-weight:700; }
   .map-btn { flex-shrink:0; width:44px; height:44px; border-radius:10px; border:1px solid var(--surface2); background: var(--surface2); font-size:18px; cursor:pointer; }
   .color-swatch.selected { border-color: var(--ink); }
   .modal-submit { width:100%; margin-top:18px; padding:13px; border:none; border-radius:12px; background: var(--gold); color:#1b1406; font-size:15px; font-weight:800; cursor:pointer; }
   .modal-delete { width:100%; margin-top:10px; padding:12px; border:1px solid var(--danger); border-radius:12px; background:none; color: var(--danger); font-size:14px; font-weight:700; cursor:pointer; }
+  .welcome-profile-item { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; margin-top:8px; background: var(--surface2); border:none; border-radius:12px; color: var(--ink); font-size:14px; cursor:pointer; text-align:right; }
+  .welcome-profile-avatar { width:30px; height:30px; border-radius:50%; background: var(--gold); color:#1b1406; font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden; }
+  .welcome-profile-avatar img { width:100%; height:100%; object-fit:cover; }
+  .user-avatar-img { width:100%; height:100%; border-radius:50%; object-fit:cover; }
+  .user-avatar-initial { font-size:14px; font-weight:800; color: var(--ink); }
+  .account-avatar { width:84px; height:84px; border-radius:50%; margin:0 auto; background: var(--gold); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .account-avatar img { width:100%; height:100%; object-fit:cover; }
+  .account-avatar span { font-size:30px; font-weight:800; color:#1b1406; }
   .view-row { padding:12px 0; border-bottom:1px solid var(--surface2); font-size:15px; display:flex; align-items:center; gap:8px; }
   .view-row:first-of-type { padding-top:0; }
   .view-color-dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; }
@@ -159,6 +170,10 @@
   .te-handle-top { top:-9px; }
   .te-handle-bottom { bottom:-9px; }
   .drag-time-label { position:absolute; right:2px; font-size:12px; font-weight:800; color:#1b1406; background: var(--gold); padding:2px 6px; border-radius:6px; z-index:8; pointer-events:none; }
+  .event-context-menu { position:absolute; background: var(--surface); border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.5); z-index:9; overflow:hidden; display:flex; flex-direction:row; }
+  .event-context-menu button { flex:1; white-space:nowrap; padding:12px 14px; background:none; border:none; color:var(--ink); font-size:14px; cursor:pointer; }
+  .event-context-menu button[data-action="copy"] { border-left:1px solid var(--surface2); }
+  .event-context-menu button[data-action="delete"] { color: var(--danger); }
   .timeline-event .te-title { font-size:12px; font-weight:700; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .timeline-event .te-time { font-size:10px; color:rgba(255,255,255,.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .now-line { position:absolute; left:0; right:56px; height:0; border-top:2px solid var(--danger); z-index:2; }
@@ -230,7 +245,8 @@
       <button class="icon-btn" id="closeForm" style="color:var(--muted); font-size:18px;">×</button>
     </div>
     <label>כותרת</label>
-    <input type="text" id="formTitle" placeholder="שם האירוע">
+    <input type="text" id="formTitle" placeholder="שם האירוע" autocomplete="off">
+    <div class="loc-suggestions" id="titleSuggestions" style="display:none;"></div>
     <div class="allday-row">
       <input type="checkbox" id="formAllDay">
       <label for="formAllDay" style="margin:0;">כל היום</label>
@@ -287,6 +303,49 @@
   </div>
 </div>
 
+<div class="overlay" id="welcomeOverlay" style="align-items:center;">
+  <div class="modal" style="border-radius:18px; text-align:center; max-width:400px;">
+    <h2 style="margin-top:0;">👋 ברוכים הבאים ליומן</h2>
+    <p style="color:var(--muted); font-size:14px; margin-bottom:20px;">התחברו כדי להמשיך</p>
+    <button class="modal-submit" id="welcomeGoogleBtn" type="button">המשך עם Google</button>
+    <div style="color:var(--muted); font-size:12px; margin:16px 0;">או הרשמה עם אימייל</div>
+    <div style="text-align:right;">
+      <label>שם</label>
+      <input type="text" id="welcomeName" placeholder="השם שלך">
+      <label>אימייל</label>
+      <input type="email" id="welcomeEmail" placeholder="you@example.com">
+    </div>
+    <p class="form-error" id="welcomeError" style="display:none;"></p>
+    <button class="modal-secondary" id="welcomeEmailBtn" type="button" style="display:block;">הרשמה עם אימייל</button>
+    <div id="welcomeProfilesList"></div>
+  </div>
+</div>
+
+<div class="day-view-overlay" id="accountOverlay">
+  <div class="day-view-header">
+    <button class="icon-btn" id="closeAccount" style="color: var(--ink); font-size: 22px; display:flex; align-items:center; gap:4px;">
+      <span dir="ltr" style="unicode-bidi: isolate-override;">‹</span>
+      <span style="font-size:14px; font-weight:600;">חזרה</span>
+    </button>
+    <div class="day-view-month-label">החשבון שלי</div>
+    <div style="width:60px;"></div>
+  </div>
+  <div class="day-view-content" style="overflow-y:auto;">
+    <div style="text-align:center; padding:20px 16px 10px;">
+      <div class="account-avatar" id="accountAvatar"></div>
+      <h2 id="accountName" style="margin:14px 0 2px;"></h2>
+      <div style="color:var(--muted); font-size:14px;" id="accountEmail"></div>
+    </div>
+    <label style="padding:0 16px; display:block; margin-top:10px;">הגדרות</label>
+    <div style="margin:8px 16px 0;">
+      <button class="modal-secondary" id="accountGoogleBtn" type="button" style="margin-top:0;">חיבור ל-Google Calendar</button>
+    </div>
+    <div style="margin:28px 16px 0;">
+      <button class="modal-delete" id="accountLogoutBtn" type="button">התנתקות / החלפת משתמש</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div class="overlay" id="deleteOverlay">
@@ -302,7 +361,7 @@
 <script>
 // ===== Google Calendar sync config =====
 const GOOGLE_CLIENT_ID = "239143987006-42gvbinfhcgdcr6bpfp50n9orjbrclnb.apps.googleusercontent.com";
-const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events";
+const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events openid email profile";
 const GOOGLE_API_BASE = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const REFRESH_TOKEN_KEY = "google_refresh_token_v1";
 const REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -313,7 +372,47 @@ let syncInFlight = false;
 
 const STORAGE_KEY = "calendar_events_v1";
 let events = [];
-try { events = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch(e) { events = []; }
+
+// ===== Local multi-profile system (no server — everything stays on this
+// device/browser; lets a few people share one phone/tablet, each with their
+// own separate events and their own Google Calendar connection) =====
+const PROFILES_KEY = "app_profiles_v1";
+const ACTIVE_PROFILE_KEY = "app_active_profile_v1";
+function getProfiles() {
+  try { return JSON.parse(localStorage.getItem(PROFILES_KEY) || "{}"); } catch(e) { return {}; }
+}
+function saveProfiles(p) { localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); }
+function upsertProfile(email, fields) {
+  const profiles = getProfiles();
+  profiles[email] = { ...(profiles[email] || {}), ...fields, email };
+  saveProfiles(profiles);
+  return profiles[email];
+}
+function getActiveProfileEmail() { return localStorage.getItem(ACTIVE_PROFILE_KEY) || null; }
+function getActiveProfile() {
+  const email = getActiveProfileEmail();
+  return email ? getProfiles()[email] : null;
+}
+function setActiveProfileEmail(email) { localStorage.setItem(ACTIVE_PROFILE_KEY, email); }
+function clearActiveProfile() { localStorage.removeItem(ACTIVE_PROFILE_KEY); }
+function nsKey(base) {
+  const email = getActiveProfileEmail();
+  return email ? base + ":" + email : base;
+}
+function loadEventsForActiveProfile() {
+  try { events = JSON.parse(localStorage.getItem(nsKey(STORAGE_KEY)) || "[]"); } catch(e) { events = []; }
+}
+// One-time migration: this app worked as a single-profile app before profiles
+// existed, so whoever creates the first profile on this device inherits
+// whatever events/Google connection were already saved here.
+function migrateLegacyDataOnce(email) {
+  if (localStorage.getItem("legacy_migrated_v1")) return;
+  const legacyEvents = localStorage.getItem(STORAGE_KEY);
+  const legacyRefresh = localStorage.getItem(REFRESH_TOKEN_KEY);
+  if (legacyEvents) localStorage.setItem(STORAGE_KEY + ":" + email, legacyEvents);
+  if (legacyRefresh) localStorage.setItem(REFRESH_TOKEN_KEY + ":" + email, legacyRefresh);
+  localStorage.setItem("legacy_migrated_v1", "1");
+}
 
 const HEBREW_MONTHS = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
 const WEEKDAY_LETTERS = ["א","ב","ג","ד","ה","ו","ש"];
@@ -465,7 +564,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
-function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(events)); }
+function persist() { localStorage.setItem(nsKey(STORAGE_KEY), JSON.stringify(events)); }
 function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
 function colorValue(key) { const c = COLORS.find(c => c.key === key); return c ? c.value : COLORS[0].value; }
 
@@ -709,6 +808,8 @@ function exitEditMode() {
 document.addEventListener("pointerdown", (ev) => {
   if (editModeEventId === null) return;
   if (ev.target.closest(`.timeline-event[data-id="${editModeEventId}"]`)) return;
+  if (ev.target.closest("#eventContextMenu")) return;
+  if (ev.target.closest("#weekStrip")) return;
   exitEditMode();
 }, { capture: true });
 
@@ -783,8 +884,9 @@ function attachEventDrag(el) {
     dragging = false;
     el.classList.remove("dragging");
     hideDragTimeLabel();
+    const id = el.dataset.id;
     if (moved && el._pendingStart != null) {
-      const ev_ = events.find(x => x.id === el.dataset.id);
+      const ev_ = events.find(x => x.id === id);
       if (ev_) {
         ev_.startTime = minutesToTime(el._pendingStart);
         ev_.endTime = minutesToTime(el._pendingStart + durationMin);
@@ -795,9 +897,55 @@ function attachEventDrag(el) {
     }
     el._pendingStart = null;
     renderAgenda(); // refresh so edit-mode handles reflect current state either way
+    if (!moved) {
+      const freshEl = document.querySelector(`.timeline-event[data-id="${id}"]`);
+      if (freshEl) showEventContextMenu(freshEl, id);
+    }
   };
   el.addEventListener("pointerup", finishDrag);
   el.addEventListener("pointercancel", finishDrag);
+}
+
+function duplicateEvent(id) {
+  const e = events.find(x => x.id === id);
+  if (!e) return;
+  const copy = { ...e, id: uid(), googleEventId: null, createdAt: Date.now() };
+  events.push(copy);
+  persist();
+  renderAgenda();
+  pushCreateToGoogle(copy);
+  showToast("האירוע שוכפל");
+}
+
+function removeEventContextMenu() {
+  const existing = document.getElementById("eventContextMenu");
+  if (existing) existing.remove();
+}
+
+function showEventContextMenu(el, id) {
+  removeEventContextMenu();
+  const wrap = document.getElementById("timelineWrap");
+  if (!wrap) return;
+  const menu = document.createElement("div");
+  menu.className = "event-context-menu";
+  menu.id = "eventContextMenu";
+  menu.innerHTML = `<button type="button" data-action="copy">העתקה</button><button type="button" data-action="delete">מחיקה</button>`;
+  const rect = el.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  menu.style.top = (rect.top - wrapRect.top + rect.height + 6) + "px";
+  menu.style.right = "8px";
+  wrap.appendChild(menu);
+  menu.querySelector('[data-action="copy"]').addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    removeEventContextMenu();
+    duplicateEvent(id);
+  });
+  menu.querySelector('[data-action="delete"]').addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    removeEventContextMenu();
+    deleteTargetId = id;
+    showOverlay("deleteOverlay");
+  });
 }
 
 // Resize handles (top = adjust start, bottom = adjust end). Only present
@@ -919,6 +1067,17 @@ function renderWeekStrip() {
   strip.innerHTML = html;
   strip.querySelectorAll(".wd-cell").forEach(cell => {
     cell.addEventListener("click", () => {
+      if (editModeEventId) {
+        const ev_ = events.find(x => x.id === editModeEventId);
+        if (ev_ && cell.dataset.date !== ev_.date) {
+          const wasSingleDay = ev_.date === eventEndDate(ev_);
+          ev_.date = cell.dataset.date;
+          if (wasSingleDay) ev_.endDate = cell.dataset.date;
+          persist();
+          pushUpdateToGoogle(ev_);
+          showToast("האירוע הועבר ל־" + formatAgendaLabel(cell.dataset.date));
+        }
+      }
       selectedDate = cell.dataset.date;
       const [y,m] = selectedDate.split("-").map(Number);
       viewYear = y; viewMonth = m;
@@ -1229,6 +1388,49 @@ document.getElementById("openMapBtn").addEventListener("click", () => {
   openInMaps(document.getElementById("formLocation").value.trim());
 });
 
+// Title autocomplete from past events already in memory — no network, just
+// suggests titles you've used before as you type a new event's name.
+(function() {
+  const input = document.getElementById("formTitle");
+  const box = document.getElementById("titleSuggestions");
+  function hideBox() { box.style.display = "none"; box.innerHTML = ""; }
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { hideBox(); return; }
+    const seenTitles = new Set();
+    const matches = events.slice()
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .filter(e => e.title && e.title.toLowerCase().includes(q) && e.title.toLowerCase() !== q)
+      .filter(e => { if (seenTitles.has(e.title)) return false; seenTitles.add(e.title); return true; })
+      .slice(0, 6);
+    if (!matches.length) { hideBox(); return; }
+    box.innerHTML = matches.map(e => {
+      const timeText = e.allDay ? "יום שלם" : `${e.startTime || "?"} - ${e.endTime || "?"}`;
+      const locText = e.location ? ` · 📍 ${escapeHtml(e.location)}` : "";
+      return `<div class="loc-suggestion-item title-suggestion-item" data-id="${e.id}">
+        <div class="tsi-title">${escapeHtml(e.title)}</div>
+        <div class="tsi-sub">🕐 ${escapeHtml(timeText)}${locText}</div>
+      </div>`;
+    }).join("");
+    box.style.display = "block";
+    box.querySelectorAll(".loc-suggestion-item").forEach(item => {
+      item.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        const src = events.find(x => x.id === item.dataset.id);
+        if (!src) return;
+        input.value = src.title;
+        document.getElementById("formLocation").value = src.location || "";
+        document.getElementById("formAllDay").checked = !!src.allDay;
+        document.getElementById("formStart").value = src.allDay ? "" : (src.startTime || "");
+        document.getElementById("formEnd").value = src.allDay ? "" : (src.endTime || "");
+        updateAllDayUI();
+        hideBox();
+      });
+    });
+  });
+  input.addEventListener("blur", () => setTimeout(hideBox, 150));
+})();
+
 // Address autocomplete via OpenStreetMap's free Nominatim search (no API
 // key/billing needed), plus a "current location" option (using the phone's
 // GPS + reverse geocoding) — the closest we can get in a web app to the
@@ -1411,9 +1613,6 @@ document.getElementById("todayBtn").addEventListener("click", () => {
   syncFromGoogle();
 });
 
-renderCalendar();
-renderAgenda();
-
 // ---- Toast ----
 let toastTimer = null;
 function showToast(msg) {
@@ -1431,19 +1630,132 @@ function updateGoogleButton() {
   btn.title = googleConnected ? "מחובר ל-Google Calendar" : "חיבור ל-Google Calendar";
 }
 
-function startGoogleConnect() {
+function initials(name) {
+  return (name || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
+}
+
+function applyActiveProfileToUI() {
+  const profile = getActiveProfile();
+  const btn = document.getElementById("googleBtn");
+  if (!profile) return;
+  const iconSlot = btn.querySelector("svg");
+  let avatarWrap = btn.querySelector(".user-avatar-wrap");
+  if (!avatarWrap) {
+    avatarWrap = document.createElement("span");
+    avatarWrap.className = "user-avatar-wrap";
+    avatarWrap.style.cssText = "width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;";
+    btn.appendChild(avatarWrap);
+  }
+  if (iconSlot) iconSlot.style.display = "none";
+  avatarWrap.innerHTML = profile.picture
+    ? `<img class="user-avatar-img" src="${profile.picture}" alt="">`
+    : `<span class="user-avatar-initial">${escapeHtml(initials(profile.name))}</span>`;
+}
+
+function renderWelcomeProfilesList() {
+  const wrap = document.getElementById("welcomeProfilesList");
+  const profiles = Object.values(getProfiles());
+  if (!profiles.length) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<div style="color:var(--muted); font-size:12px; margin:16px 0 4px;">או המשך כאחד מהמשתמשים הקיימים במכשיר זה</div>` +
+    profiles.map(p => `<button type="button" class="welcome-profile-item" data-email="${escapeHtml(p.email)}">
+      <span class="welcome-profile-avatar">${p.picture ? `<img src="${escapeHtml(p.picture)}" alt="">` : escapeHtml(initials(p.name))}</span>
+      <span>${escapeHtml(p.name)} <span style="color:var(--muted);">· ${escapeHtml(p.email)}</span></span>
+    </button>`).join("");
+  wrap.querySelectorAll(".welcome-profile-item").forEach(btn => {
+    btn.addEventListener("click", () => selectProfileAndEnter(btn.dataset.email));
+  });
+}
+
+function selectProfileAndEnter(email) {
+  migrateLegacyDataOnce(email);
+  setActiveProfileEmail(email);
+  loadEventsForActiveProfile();
+  hideOverlay("welcomeOverlay");
+  applyActiveProfileToUI();
+  updateGoogleButton();
+  renderCalendar();
+  renderAgenda();
+  refreshGoogleSession().then(restored => { if (restored) { updateGoogleButton(); syncFromGoogle(); } });
+}
+
+function showWelcomeScreen() {
+  renderWelcomeProfilesList();
+  showOverlay("welcomeOverlay");
+}
+
+function openAccountScreen() {
+  const profile = getActiveProfile();
+  if (!profile) return;
+  document.getElementById("accountName").textContent = profile.name;
+  document.getElementById("accountEmail").textContent = profile.email;
+  const avatar = document.getElementById("accountAvatar");
+  avatar.innerHTML = profile.picture ? `<img src="${escapeHtml(profile.picture)}" alt="">` : `<span>${escapeHtml(initials(profile.name))}</span>`;
+  refreshAccountGoogleBtn();
+  showOverlay("accountOverlay");
+}
+function refreshAccountGoogleBtn() {
+  const gbtn = document.getElementById("accountGoogleBtn");
+  const profile = getActiveProfile();
+  // Once someone is signed in without Google, don't keep pitching a Google
+  // connection during this session — it only reappears after they log out
+  // and sign in again (choosing Google at that point).
+  if (!googleConnected && profile && profile.provider !== "google") {
+    gbtn.style.display = "none";
+    return;
+  }
+  gbtn.style.display = "block";
+  gbtn.textContent = googleConnected ? "✓ מחובר ל-Google Calendar (לחיצה לניתוק)" : "חיבור ל-Google Calendar";
+}
+
+document.getElementById("closeAccount").addEventListener("click", () => hideOverlay("accountOverlay"));
+document.getElementById("accountGoogleBtn").addEventListener("click", () => {
+  if (googleConnected) { disconnectGoogle(); }
+  else { startGoogleConnect("connect"); }
+  refreshAccountGoogleBtn();
+});
+document.getElementById("accountLogoutBtn").addEventListener("click", () => {
+  clearActiveProfile();
+  hideOverlay("accountOverlay");
+  showWelcomeScreen();
+});
+
+document.getElementById("welcomeGoogleBtn").addEventListener("click", () => startGoogleConnect("login"));
+document.getElementById("welcomeEmailBtn").addEventListener("click", () => {
+  const name = document.getElementById("welcomeName").value.trim();
+  const email = document.getElementById("welcomeEmail").value.trim();
+  const errEl = document.getElementById("welcomeError");
+  if (!name || !email || !email.includes("@")) {
+    errEl.textContent = "יש למלא שם וכתובת אימייל תקינה";
+    errEl.style.display = "block";
+    return;
+  }
+  errEl.style.display = "none";
+  upsertProfile(email, { name, email, provider: "email" });
+  selectProfileAndEnter(email);
+});
+
+function startGoogleConnect(purpose) {
   const authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     response_type: "code",
     scope: GOOGLE_SCOPES,
     access_type: "offline",
-    prompt: "consent"
+    prompt: "consent",
+    state: purpose || "connect"
   });
   window.location.href = authUrl;
 }
 
-async function exchangeCodeForTokens(code) {
+async function fetchGoogleUserinfo(accessToken) {
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: "Bearer " + accessToken }
+  });
+  if (!res.ok) throw new Error("userinfo failed");
+  return res.json();
+}
+
+async function exchangeCodeForTokens(code, purpose) {
   const res = await fetch("/api/google-auth", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1451,13 +1763,22 @@ async function exchangeCodeForTokens(code) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "auth failed");
-  if (data.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token);
   googleAccessToken = data.access_token;
+
+  if (purpose === "login") {
+    const info = await fetchGoogleUserinfo(googleAccessToken);
+    upsertProfile(info.email, { name: info.name || info.email, email: info.email, picture: info.picture || "", provider: "google" });
+    migrateLegacyDataOnce(info.email);
+    setActiveProfileEmail(info.email);
+    loadEventsForActiveProfile();
+  }
+
+  if (data.refresh_token) localStorage.setItem(nsKey(REFRESH_TOKEN_KEY), data.refresh_token);
   googleConnected = true;
 }
 
 async function refreshGoogleSession() {
-  const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
+  const rt = localStorage.getItem(nsKey(REFRESH_TOKEN_KEY));
   if (!rt) return false;
   try {
     const res = await fetch("/api/google-refresh", {
@@ -1471,48 +1792,57 @@ async function refreshGoogleSession() {
     googleConnected = true;
     return true;
   } catch(err) {
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(nsKey(REFRESH_TOKEN_KEY));
     googleConnected = false;
     googleAccessToken = null;
     return false;
   }
 }
 
-async function initGoogleAuth() {
+function disconnectGoogle() {
+  const rt = localStorage.getItem(nsKey(REFRESH_TOKEN_KEY));
+  if (rt) fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rt)}`, { method: "POST" }).catch(() => {});
+  localStorage.removeItem(nsKey(REFRESH_TOKEN_KEY));
+  googleAccessToken = null;
+  googleConnected = false;
+  updateGoogleButton();
+  showToast("נותקת מ-Google Calendar");
+}
+
+// ===== Boot sequence: handle an OAuth redirect back first (which may be
+// completing either "log me in" or "just connect my calendar"), then decide
+// whether to show the welcome/login gate or the calendar itself. =====
+async function boot() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
+  const state = params.get("state");
   if (code) {
     window.history.replaceState({}, document.title, window.location.pathname);
     try {
-      await exchangeCodeForTokens(code);
-      showToast("מחובר ל-Google Calendar");
-      updateGoogleButton();
-      syncFromGoogle();
+      await exchangeCodeForTokens(code, state);
+      showToast(state === "login" ? "התחברת בהצלחה" : "מחובר ל-Google Calendar");
     } catch(err) {
       showToast("החיבור ל-Google נכשל: " + err.message);
     }
+  } else if (getActiveProfileEmail()) {
+    await refreshGoogleSession();
+  }
+
+  if (!getActiveProfileEmail()) {
+    showWelcomeScreen();
     return;
   }
-  const restored = await refreshGoogleSession();
-  if (restored) {
-    updateGoogleButton();
-    syncFromGoogle();
-  }
+  loadEventsForActiveProfile();
+  applyActiveProfileToUI();
+  updateGoogleButton();
+  renderCalendar();
+  renderAgenda();
+  if (googleConnected) syncFromGoogle();
 }
-initGoogleAuth();
+boot();
 
 document.getElementById("googleBtn").addEventListener("click", () => {
-  if (googleConnected) {
-    const rt = localStorage.getItem(REFRESH_TOKEN_KEY);
-    if (rt) fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rt)}`, { method: "POST" }).catch(() => {});
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-    googleAccessToken = null;
-    googleConnected = false;
-    updateGoogleButton();
-    showToast("נותקת מ-Google Calendar");
-    return;
-  }
-  startGoogleConnect();
+  openAccountScreen();
 });
 
 async function googleApiFetch(url, options={}, retried=false) {
