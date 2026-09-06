@@ -1083,10 +1083,17 @@ document.getElementById("openMapBtn").addEventListener("click", () => {
       if (controller) controller.abort();
       controller = new AbortController();
       try {
-        const url = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=0&accept-language=he&limit=5&q=" + encodeURIComponent(q);
+        const url = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&accept-language=he&limit=8&q=" + encodeURIComponent(q);
         const res = await fetch(url, { signal: controller.signal });
         const results = await res.json();
-        box.innerHTML = CURRENT_LOC_HTML + results.map(r => `<div class="loc-suggestion-item" data-value="${escapeHtml(r.display_name)}">📌 ${escapeHtml(r.display_name)}</div>`).join("");
+        box.innerHTML = CURRENT_LOC_HTML + results.map(r => {
+          const a = r.address || {};
+          const road = a.road || a.pedestrian || a.footway || "";
+          const houseNum = a.house_number || "";
+          const city = a.city || a.town || a.village || a.municipality || "";
+          const clean = (road && houseNum) ? `${road} ${houseNum}${city ? ", " + city : ""}` : r.display_name;
+          return `<div class="loc-suggestion-item" data-value="${escapeHtml(clean)}">📌 ${escapeHtml(clean)}</div>`;
+        }).join("");
         box.style.display = "block";
         attachCurrentLocationHandler();
         box.querySelectorAll(".loc-suggestion-item:not(.loc-current)").forEach(item => {
