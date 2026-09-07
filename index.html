@@ -33,9 +33,15 @@
   .top-actions .today-btn { margin: 0; }
   .today-btn.connected { color: var(--green); border-color: var(--green); }
   .modal-secondary { width:100%; margin-top:10px; padding:12px; border:1px solid var(--surface2); border-radius:12px; background:none; color: var(--ink); font-size:14px; font-weight:700; cursor:pointer; }
-  .form-card { background: var(--surface2); border-radius:14px; padding:2px 14px 12px; margin-bottom:14px; }
+  .form-card { background: var(--surface2); border-radius:12px; padding:2px 14px 8px; margin-bottom:10px; }
   .form-card input[type=text], .form-card input[type=email], .form-card input[type=date], .form-card input[type=time], .form-card textarea { background: var(--bg); border-color: var(--bg); }
-  .form-card label:first-of-type { margin-top:10px; }
+  .form-card label:first-of-type { margin-top:8px; }
+  .picker-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; cursor:pointer; }
+  .picker-row-label { font-size:14px; color: var(--ink); }
+  .picker-row-value { display:flex; align-items:center; gap:8px; font-size:13px; color: var(--muted); max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .picker-row-chevron { color: var(--muted); font-size:14px; }
+  .picker-color-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+  input[type=color] { width:44px; height:44px; border:none; border-radius:10px; padding:0; background:none; cursor:pointer; }
   .reminder-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
   .reminder-chip { padding:8px 12px; border-radius:999px; border:1px solid var(--surface); background: var(--surface); color: var(--muted); font-size:12px; font-weight:700; cursor:pointer; }
   .reminder-chip.selected { background: var(--gold); border-color: var(--gold); color:#1b1406; }
@@ -77,14 +83,15 @@
   .modal-drag-handle { width:40px; height:5px; background: var(--surface2); border-radius:3px; margin:0 auto 14px; touch-action:none; }
   .modal-head h2 { margin:0; font-size:18px; }
   .icon-btn { background:none; border:none; cursor:pointer; }
-  .modal label { display:block; font-size:12px; color: var(--muted); margin: 10px 0 4px; }
-  .modal input[type=text], .modal input[type=email], .modal input[type=date], .modal input[type=time], .modal textarea { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--surface2); background: var(--surface2); color: var(--ink); font-size:16px; font-family:inherit; }
+  .modal label, .day-view-content .form-card label { display:block; font-size:11px; color: var(--muted); margin: 8px 0 3px; }
+  .modal input[type=text], .modal input[type=email], .modal input[type=date], .modal input[type=time], .modal textarea,
+  .day-view-content input[type=text], .day-view-content input[type=email], .day-view-content textarea { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--surface2); background: var(--surface2); color: var(--ink); font-size:16px; font-family:inherit; }
   .modal textarea { min-height:80px; resize:vertical; line-height:1.5; }
   .time-row { display:flex; gap:10px; }
   .time-row > div { flex:1; }
-  .allday-row { display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:14px; font-size:14px; }
+  .allday-row { display:flex; align-items:center; gap:8px; margin-top:8px; margin-bottom:10px; font-size:14px; }
   .allday-row input { width:auto; }
-  .datetime-row { display:flex; align-items:stretch; background: var(--surface2); border:1px solid var(--surface2); border-radius:10px; overflow:hidden; margin-bottom:12px; }
+  .datetime-row { display:flex; align-items:stretch; background: var(--surface2); border:1px solid var(--surface2); border-radius:10px; overflow:hidden; margin-bottom:8px; }
   .modal .datetime-row input[type=date], .modal .datetime-row input[type=time] {
     flex:1; width:auto; min-width:0; border:none; background:transparent; border-radius:0; margin:0; padding:11px 8px; text-align:center;
   }
@@ -254,8 +261,10 @@
       <label>כותרת</label>
       <input type="text" id="formTitle" placeholder="שם האירוע" autocomplete="off">
       <div class="loc-suggestions" id="titleSuggestions" style="display:none;"></div>
-      <label>צבע</label>
-      <div class="color-row" id="colorRow"></div>
+      <div class="picker-row" id="categoryPickerRow">
+        <span class="picker-row-label">קטגוריה</span>
+        <span class="picker-row-value"><span class="picker-color-dot" id="categoryRowDot"></span><span id="categoryRowText"></span><span class="picker-row-chevron" dir="ltr" style="unicode-bidi: isolate-override;">‹</span></span>
+      </div>
     </div>
     <div class="form-card">
       <div class="allday-row">
@@ -284,13 +293,9 @@
       <div class="loc-suggestions" id="locSuggestions" style="display:none;"></div>
     </div>
     <div class="form-card">
-      <label>הזכר לי</label>
-      <div class="reminder-row" id="reminderRow">
-        <button type="button" class="reminder-chip" data-min="1440">יום לפני</button>
-        <button type="button" class="reminder-chip" data-min="120">שעתיים לפני</button>
-        <button type="button" class="reminder-chip" data-min="60">שעה לפני</button>
-        <button type="button" class="reminder-chip" data-min="30">חצי שעה לפני</button>
-        <button type="button" class="reminder-chip" data-min="15">רבע שעה לפני</button>
+      <div class="picker-row" id="reminderPickerRow">
+        <span class="picker-row-label">הזכר לי</span>
+        <span class="picker-row-value"><span id="reminderRowText">לא מוגדר</span><span class="picker-row-chevron" dir="ltr" style="unicode-bidi: isolate-override;">‹</span></span>
       </div>
     </div>
     <div class="form-card">
@@ -298,16 +303,45 @@
       <textarea id="formNotes" placeholder="פרטים נוספים (לא חובה)"></textarea>
     </div>
     <div class="form-card">
-      <label>שליחת פרטי האירוע במייל</label>
-      <div class="location-row">
-        <input type="email" id="formEmailTo" placeholder="כתובת אימייל" autocomplete="off">
-        <button type="button" class="map-btn" id="sendEmailBtn" title="שליחה">✉️</button>
+      <div class="picker-row" id="emailPickerRow">
+        <span class="picker-row-label">שליחת פרטי האירוע במייל</span>
+        <span class="picker-row-value"><span id="emailRowText">שליחה</span><span class="picker-row-chevron" dir="ltr" style="unicode-bidi: isolate-override;">‹</span></span>
       </div>
     </div>
     <p class="form-error" id="formError" style="display:none;"></p>
     <button class="modal-submit" id="formSubmit">שמירה</button>
     <button class="modal-delete" id="formDelete" style="display:none;">מחיקת אירוע</button>
   </div>
+</div>
+
+<div class="overlay" id="categoryPickerOverlay">
+  <div class="modal">
+    <div class="modal-drag-handle"></div>
+    <h2 style="text-align:center; margin:0 0 10px;">קטגוריה</h2>
+    <div id="categoryPickerList"></div>
+  </div>
+</div>
+
+<div class="overlay" id="reminderPickerOverlay">
+  <div class="modal">
+    <div class="modal-drag-handle"></div>
+    <h2 style="text-align:center; margin:0 0 10px;">הזכר לי</h2>
+    <div class="form-card" id="reminderRow"></div>
+  </div>
+</div>
+
+<div class="overlay" id="emailSendOverlay">
+  <div class="modal">
+    <div class="modal-drag-handle"></div>
+    <h2 style="text-align:center; margin:0 0 10px;">שליחת אירוע במייל</h2>
+    <label>כתובת אימייל</label>
+    <div class="location-row">
+      <input type="email" id="formEmailTo" placeholder="כתובת אימייל" autocomplete="off">
+      <button type="button" class="map-btn" id="sendEmailBtn" title="שליחה">✉️</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <div class="overlay" id="viewOverlay">
@@ -369,9 +403,35 @@
     <label style="padding:0 16px; display:block; margin-top:10px;">הגדרות</label>
     <div style="margin:8px 16px 0;">
       <button class="modal-secondary" id="accountGoogleBtn" type="button" style="margin-top:0;">חיבור ל-Google Calendar</button>
+      <button class="modal-secondary" id="accountCategoriesBtn" type="button">קטגוריות</button>
     </div>
     <div style="margin:28px 16px 0;">
       <button class="modal-delete" id="accountLogoutBtn" type="button">התנתקות / החלפת משתמש</button>
+    </div>
+  </div>
+</div>
+
+<div class="day-view-overlay" id="categoryManageOverlay">
+  <div class="day-view-header">
+    <button class="icon-btn" id="closeCategoryManage" style="color: var(--ink); font-size: 22px; display:flex; align-items:center; gap:4px;">
+      <span dir="ltr" style="unicode-bidi: isolate-override;">‹</span>
+      <span style="font-size:14px; font-weight:600;">חזרה</span>
+    </button>
+    <div class="day-view-month-label">קטגוריות</div>
+    <div style="width:60px;"></div>
+  </div>
+  <div class="day-view-content" style="overflow-y:auto;">
+    <div id="categoryManageList" style="margin:16px 16px 0;"></div>
+    <div class="form-card" style="margin:16px;">
+      <label id="categoryFormLabel">קטגוריה חדשה</label>
+      <input type="text" id="newCategoryName" placeholder="שם הקטגוריה" autocomplete="off">
+      <label>צבע</label>
+      <div style="display:flex; align-items:center; gap:12px; margin-top:6px;">
+        <input type="color" id="newCategoryColorPicker" value="#d1a24a">
+        <span style="font-size:13px; color:var(--muted);">הקש/י לבחירת כל צבע</span>
+      </div>
+      <button class="modal-submit" id="addCategoryBtn" type="button">הוספת קטגוריה</button>
+      <button class="modal-secondary" id="cancelEditCategoryBtn" type="button" style="display:none;">ביטול עריכה</button>
     </div>
   </div>
 </div>
@@ -391,7 +451,7 @@
 <script>
 // ===== Google Calendar sync config =====
 const GOOGLE_CLIENT_ID = "239143987006-42gvbinfhcgdcr6bpfp50n9orjbrclnb.apps.googleusercontent.com";
-const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events openid email profile";
+const GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.send openid email profile";
 const GOOGLE_API_BASE = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const REFRESH_TOKEN_KEY = "google_refresh_token_v1";
 const REDIRECT_URI = window.location.origin + window.location.pathname;
@@ -607,12 +667,26 @@ function escapeHtml(s) {
 }
 function persist() { localStorage.setItem(nsKey(STORAGE_KEY), JSON.stringify(events)); }
 function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
-function colorValue(key) { const c = COLORS.find(c => c.key === key); return c ? c.value : COLORS[0].value; }
+function colorValue(key) {
+  if (typeof key === "string" && key.charAt(0) === "#") return key;
+  const c = COLORS.find(c => c.key === key);
+  return c ? c.value : COLORS[0].value;
+}
 
 document.getElementById("weekdayRow").innerHTML = WEEKDAY_LETTERS.map(l => `<div>${l}</div>`).join("");
-document.getElementById("colorRow").innerHTML = COLORS.map(c =>
-  `<div class="color-swatch" data-color="${c.key}" style="background:${c.value};"></div>`
-).join("");
+
+const CATEGORIES_KEY = "app_categories_v1";
+const DEFAULT_CATEGORY_NAMES = { gold: "כללי", steel: "כחול", green: "ירוק", danger: "אדום", purple: "סגול" };
+function getCategories() {
+  try {
+    const raw = localStorage.getItem(nsKey(CATEGORIES_KEY));
+    if (raw) { const parsed = JSON.parse(raw); if (parsed && parsed.length) return parsed; }
+  } catch(e) {}
+  const defaults = COLORS.map(c => ({ id: c.key, name: DEFAULT_CATEGORY_NAMES[c.key] || c.key, color: c.key }));
+  localStorage.setItem(nsKey(CATEGORIES_KEY), JSON.stringify(defaults));
+  return defaults;
+}
+function saveCategories(cats) { localStorage.setItem(nsKey(CATEGORIES_KEY), JSON.stringify(cats)); }
 
 function renderCalendar() {
   document.getElementById("monthLabel").textContent = HEBREW_MONTHS[viewMonth-1] + " " + viewYear;
@@ -1331,7 +1405,7 @@ function startMomentumScroll(scrollEl, velocity) {
       const newEvent = {
         id: uid(), title: "", date: selectedDate, endDate: selectedDate, allDay: false,
         startTime: minutesToTime(minutes), endTime: minutesToTime(Math.min(minutes + 30, 1439)),
-        location: "", notes: "", color: selectedColor || "gold", googleEventId: null, createdAt: Date.now()
+        location: "", notes: "", color: selectedColor || "gold", categoryId: selectedCategoryId || "gold", googleEventId: null, createdAt: Date.now()
       };
       events.push(newEvent);
       persist();
@@ -1424,30 +1498,73 @@ document.getElementById("formDate").addEventListener("change", () => {
   if (!endEl.value || endEl.value < startVal) endEl.value = startVal;
 });
 
-function selectColor(key) {
-  selectedColor = key;
-  document.querySelectorAll(".color-swatch").forEach(sw => sw.classList.toggle("selected", sw.dataset.color === key));
+let selectedCategoryId = "gold";
+function selectCategory(id) {
+  const cats = getCategories();
+  const cat = cats.find(c => c.id === id) || cats[0];
+  selectedCategoryId = cat.id;
+  selectedColor = cat.color;
+  document.getElementById("categoryRowDot").style.background = colorValue(cat.color);
+  document.getElementById("categoryRowText").textContent = cat.name;
 }
-document.getElementById("colorRow").querySelectorAll(".color-swatch").forEach(sw => {
-  sw.addEventListener("click", () => selectColor(sw.dataset.color));
+function renderCategoryPickerList() {
+  const cats = getCategories();
+  const list = document.getElementById("categoryPickerList");
+  list.innerHTML = cats.map(c => `<div class="picker-row category-picker-item" data-id="${c.id}">
+      <span class="picker-row-label"><span class="picker-color-dot" style="background:${colorValue(c.color)}; display:inline-block; margin-left:8px; vertical-align:middle;"></span>${escapeHtml(c.name)}</span>
+      <span style="color:var(--gold); font-weight:800;">${c.id === selectedCategoryId ? "✓" : ""}</span>
+    </div>`).join("");
+  list.querySelectorAll(".category-picker-item").forEach(item => {
+    item.addEventListener("click", () => {
+      selectCategory(item.dataset.id);
+      hideOverlay("categoryPickerOverlay");
+    });
+  });
+}
+document.getElementById("categoryPickerRow").addEventListener("click", () => {
+  renderCategoryPickerList();
+  showOverlay("categoryPickerOverlay");
+});
+["categoryPickerOverlay", "reminderPickerOverlay", "emailSendOverlay"].forEach(id => {
+  document.getElementById(id).addEventListener("click", (e) => { if (e.target.id === id) hideOverlay(id); });
 });
 
 let selectedReminders = [];
-function setSelectedReminders(mins) {
-  selectedReminders = mins.slice();
-  document.querySelectorAll(".reminder-chip").forEach(chip => {
-    chip.classList.toggle("selected", selectedReminders.includes(Number(chip.dataset.min)));
+const REMINDER_OPTIONS = [1440, 120, 60, 30, 15];
+const REMINDER_LABELS = { 1440: "יום לפני", 120: "שעתיים לפני", 60: "שעה לפני", 30: "חצי שעה לפני", 15: "רבע שעה לפני" };
+function updateReminderRowText() {
+  const txt = document.getElementById("reminderRowText");
+  if (!selectedReminders.length) { txt.textContent = "לא מוגדר"; return; }
+  txt.textContent = selectedReminders.slice().sort((a,b)=>b-a).map(m => REMINDER_LABELS[m] || (m + " דק'")).join(", ");
+}
+function renderReminderRows() {
+  const wrap = document.getElementById("reminderRow");
+  wrap.innerHTML = REMINDER_OPTIONS.map((min, i) => `<div class="picker-row reminder-toggle-row" data-min="${min}" style="${i < REMINDER_OPTIONS.length - 1 ? 'border-bottom:1px solid var(--surface);' : ''}">
+      <span class="picker-row-label">${REMINDER_LABELS[min]}</span>
+      <span style="color:var(--gold); font-weight:800;" class="reminder-check">${selectedReminders.includes(min) ? "✓" : ""}</span>
+    </div>`).join("");
+  wrap.querySelectorAll(".reminder-toggle-row").forEach(row => {
+    row.addEventListener("click", () => {
+      const min = Number(row.dataset.min);
+      const idx = selectedReminders.indexOf(min);
+      if (idx >= 0) selectedReminders.splice(idx, 1);
+      else selectedReminders.push(min);
+      row.querySelector(".reminder-check").textContent = selectedReminders.includes(min) ? "✓" : "";
+      updateReminderRowText();
+    });
   });
 }
-document.querySelectorAll(".reminder-chip").forEach(chip => {
-  chip.addEventListener("click", () => {
-    const min = Number(chip.dataset.min);
-    const idx = selectedReminders.indexOf(min);
-    if (idx >= 0) selectedReminders.splice(idx, 1);
-    else selectedReminders.push(min);
-    chip.classList.toggle("selected");
-  });
+function setSelectedReminders(mins) {
+  selectedReminders = mins.slice();
+  updateReminderRowText();
+}
+document.getElementById("reminderPickerRow").addEventListener("click", () => {
+  renderReminderRows();
+  showOverlay("reminderPickerOverlay");
 });
+
+document.getElementById("emailPickerRow").addEventListener("click", () => showOverlay("emailSendOverlay"));
+
 
 function nearestRoundHourTimes() {
   const now = new Date();
@@ -1570,7 +1687,7 @@ function openAdd(startTimeOverride) {
   document.getElementById("formEmailTo").value = "";
   document.getElementById("formError").style.display = "none";
   document.getElementById("formDelete").style.display = "none";
-  selectColor("gold");
+  selectCategory("gold");
   setSelectedReminders([]);
   updateAllDayUI();
   showOverlay("formOverlay");
@@ -1591,7 +1708,7 @@ function openEdit(id) {
   document.getElementById("formEmailTo").value = "";
   document.getElementById("formError").style.display = "none";
   document.getElementById("formDelete").style.display = "block";
-  selectColor(e.color || "gold");
+  selectCategory(e.categoryId || e.color || "gold");
   setSelectedReminders(e.reminders || []);
   updateAllDayUI();
   showOverlay("formOverlay");
@@ -1845,11 +1962,11 @@ document.getElementById("formSubmit").addEventListener("click", () => {
     const e = events.find(x => x.id === editingId);
     e.title = title; e.date = date; e.endDate = endDate; e.allDay = allDay;
     e.startTime = allDay ? "" : startTime; e.endTime = allDay ? "" : endTime;
-    e.notes = notes; e.color = selectedColor; e.location = location; e.reminders = selectedReminders.slice();
+    e.notes = notes; e.color = selectedColor; e.categoryId = selectedCategoryId; e.location = location; e.reminders = selectedReminders.slice();
     persist();
     pushUpdateToGoogle(e);
   } else {
-    const newEvent = { id: uid(), title, date, endDate, allDay, startTime: allDay?"":startTime, endTime: allDay?"":endTime, notes, location, color: selectedColor, reminders: selectedReminders.slice(), createdAt: Date.now() };
+    const newEvent = { id: uid(), title, date, endDate, allDay, startTime: allDay?"":startTime, endTime: allDay?"":endTime, notes, location, color: selectedColor, categoryId: selectedCategoryId, reminders: selectedReminders.slice(), createdAt: Date.now() };
     events.push(newEvent);
     persist();
     pushCreateToGoogle(newEvent);
@@ -2024,6 +2141,73 @@ document.getElementById("accountGoogleBtn").addEventListener("click", () => {
   else { startGoogleConnect("connect"); }
   refreshAccountGoogleBtn();
 });
+
+// ---- Category management (Settings) ----
+let editingCategoryId = null;
+
+function renderCategoryManageList() {
+  const cats = getCategories();
+  const list = document.getElementById("categoryManageList");
+  list.innerHTML = cats.map(c => `<div class="picker-row" style="border-bottom:1px solid var(--surface2);">
+      <span class="picker-row-label"><span class="picker-color-dot" style="background:${colorValue(c.color)}; display:inline-block; margin-left:8px; vertical-align:middle;"></span>${escapeHtml(c.name)}</span>
+      <span>
+        <button type="button" class="icon-btn category-edit-btn" data-id="${c.id}" style="color:var(--gold); font-size:13px; font-weight:700;">עריכה</button>
+        <button type="button" class="icon-btn category-delete-btn" data-id="${c.id}" style="color:var(--danger); font-size:13px; font-weight:700;">מחיקה</button>
+      </span>
+    </div>`).join("");
+  list.querySelectorAll(".category-delete-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cats2 = getCategories().filter(c => c.id !== btn.dataset.id);
+      saveCategories(cats2);
+      if (editingCategoryId === btn.dataset.id) resetCategoryForm();
+      renderCategoryManageList();
+    });
+  });
+  list.querySelectorAll(".category-edit-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cat = getCategories().find(c => c.id === btn.dataset.id);
+      if (!cat) return;
+      editingCategoryId = cat.id;
+      document.getElementById("categoryFormLabel").textContent = "עריכת קטגוריה";
+      document.getElementById("newCategoryName").value = cat.name;
+      document.getElementById("newCategoryColorPicker").value = colorValue(cat.color);
+      document.getElementById("addCategoryBtn").textContent = "עדכון קטגוריה";
+      document.getElementById("cancelEditCategoryBtn").style.display = "block";
+    });
+  });
+}
+function resetCategoryForm() {
+  editingCategoryId = null;
+  document.getElementById("categoryFormLabel").textContent = "קטגוריה חדשה";
+  document.getElementById("newCategoryName").value = "";
+  document.getElementById("newCategoryColorPicker").value = "#d1a24a";
+  document.getElementById("addCategoryBtn").textContent = "הוספת קטגוריה";
+  document.getElementById("cancelEditCategoryBtn").style.display = "none";
+}
+document.getElementById("cancelEditCategoryBtn").addEventListener("click", resetCategoryForm);
+document.getElementById("accountCategoriesBtn").addEventListener("click", () => {
+  resetCategoryForm();
+  renderCategoryManageList();
+  showOverlay("categoryManageOverlay");
+});
+document.getElementById("closeCategoryManage").addEventListener("click", () => hideOverlay("categoryManageOverlay"));
+document.getElementById("addCategoryBtn").addEventListener("click", () => {
+  const nameInput = document.getElementById("newCategoryName");
+  const name = nameInput.value.trim();
+  if (!name) { showToast("נא להזין שם לקטגוריה"); return; }
+  const color = document.getElementById("newCategoryColorPicker").value;
+  const cats = getCategories();
+  if (editingCategoryId) {
+    const cat = cats.find(c => c.id === editingCategoryId);
+    if (cat) { cat.name = name; cat.color = color; }
+  } else {
+    cats.push({ id: uid(), name, color });
+  }
+  saveCategories(cats);
+  resetCategoryForm();
+  renderCategoryManageList();
+});
+
 document.getElementById("accountLogoutBtn").addEventListener("click", () => {
   clearActiveProfile();
   hideOverlay("accountOverlay");
@@ -2303,9 +2487,32 @@ setInterval(() => { if (document.visibilityState === "visible") syncFromGoogle()
 
 // ---- .ics export ----
 // ---- Send by email ----
+function buildRawEmail(to, subject, body) {
+  const encodedSubject = "=?UTF-8?B?" + btoa(unescape(encodeURIComponent(subject))) + "?=";
+  const message = [
+    "To: " + to,
+    "Subject: " + encodedSubject,
+    "Content-Type: text/plain; charset=UTF-8",
+    "",
+    body
+  ].join("\r\n");
+  return btoa(unescape(encodeURIComponent(message))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function sendViaGmail(to, subject, text) {
+  const raw = buildRawEmail(to, subject, text);
+  return googleApiFetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    body: JSON.stringify({ raw })
+  });
+}
+
 document.getElementById("sendEmailBtn").addEventListener("click", async () => {
   const to = document.getElementById("formEmailTo").value.trim();
   if (!to || !to.includes("@")) { showToast("נא להזין כתובת אימייל תקינה"); return; }
+  if (!googleConnected) {
+    showToast("צריך להתחבר ל-Google Calendar כדי לשלוח מהמייל שלך (במסך המשתמש)");
+    return;
+  }
   const title = document.getElementById("formTitle").value.trim() || "אירוע ביומן";
   const date = document.getElementById("formDate").value;
   const endDateVal = document.getElementById("formEndDate").value || date;
@@ -2327,14 +2534,8 @@ document.getElementById("sendEmailBtn").addEventListener("click", async () => {
   const original = btn.textContent;
   btn.textContent = "⏳"; btn.disabled = true;
   try {
-    const res = await fetch("/api/send-event-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, subject: title, text: lines.join("\n") })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "שגיאת שרת");
-    showToast("נשלח בהצלחה ל-" + to);
+    await sendViaGmail(to, title, lines.join("\n"));
+    showToast("נשלח בהצלחה מה-Gmail שלך ל-" + to);
     document.getElementById("formEmailTo").value = "";
   } catch (err) {
     showToast("השליחה נכשלה: " + (err.message || "שגיאה לא ידועה"));
