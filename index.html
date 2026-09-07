@@ -435,7 +435,10 @@
   </div>
   <div class="day-view-content" style="overflow-y:auto;">
     <div id="categoryManageList" style="margin:16px 16px 0;"></div>
-    <div class="form-card" style="margin:16px;">
+    <div style="margin:16px;">
+      <button class="fab-inline" id="showAddCategoryBtn" type="button" style="display:block; width:100%; background: var(--gold); color:#1b1406; border:none; border-radius:12px; padding:13px; font-size:14px; font-weight:800; cursor:pointer;">+ הוספת קטגוריה</button>
+    </div>
+    <div class="form-card" id="categoryFormCard" style="margin:16px; display:none;">
       <label id="categoryFormLabel">קטגוריה חדשה</label>
       <input type="text" id="newCategoryName" placeholder="שם הקטגוריה" autocomplete="off">
       <label>צבע</label>
@@ -444,7 +447,7 @@
         <span style="font-size:13px; color:var(--muted);">הקש/י לבחירת כל צבע</span>
       </div>
       <button class="modal-submit" id="addCategoryBtn" type="button">הוספת קטגוריה</button>
-      <button class="modal-secondary" id="cancelEditCategoryBtn" type="button" style="display:none;">ביטול עריכה</button>
+      <button class="modal-secondary" id="cancelEditCategoryBtn" type="button">ביטול</button>
     </div>
   </div>
 </div>
@@ -685,6 +688,15 @@ function colorValue(key) {
   const c = COLORS.find(c => c.key === key);
   return c ? c.value : COLORS[0].value;
 }
+function contrastTextColor(key) {
+  let hex = colorValue(key).replace("#", "");
+  if (hex.length === 3) hex = hex.split("").map(ch => ch + ch).join("");
+  const r = parseInt(hex.substr(0, 2), 16) || 0;
+  const g = parseInt(hex.substr(2, 2), 16) || 0;
+  const b = parseInt(hex.substr(4, 2), 16) || 0;
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.65 ? "#14181f" : "#ffffff";
+}
 
 document.getElementById("weekdayRow").innerHTML = WEEKDAY_LETTERS.map(l => `<div>${l}</div>`).join("");
 
@@ -695,9 +707,19 @@ function getCategories() {
     const raw = localStorage.getItem(nsKey(CATEGORIES_KEY));
     if (raw) { const parsed = JSON.parse(raw); if (parsed && parsed.length) return parsed; }
   } catch(e) {}
-  const defaults = COLORS.map(c => ({ id: c.key, name: DEFAULT_CATEGORY_NAMES[c.key] || c.key, color: c.key }));
+  const defaults = COLORS.map((c, i) => ({ id: c.key, name: DEFAULT_CATEGORY_NAMES[c.key] || c.key, color: c.key, isDefault: i === 0 }));
   localStorage.setItem(nsKey(CATEGORIES_KEY), JSON.stringify(defaults));
   return defaults;
+}
+function getDefaultCategoryId() {
+  const cats = getCategories();
+  const def = cats.find(c => c.isDefault);
+  return def ? def.id : (cats[0] ? cats[0].id : "gold");
+}
+function setDefaultCategory(id) {
+  const cats = getCategories();
+  cats.forEach(c => { c.isDefault = (c.id === id); });
+  saveCategories(cats);
 }
 function saveCategories(cats) { localStorage.setItem(nsKey(CATEGORIES_KEY), JSON.stringify(cats)); }
 
@@ -812,7 +834,7 @@ function renderAgenda() {
   if (allDayEvents.length) {
     allDayRow.style.display = "flex";
     allDayRow.innerHTML = allDayEvents.map(e =>
-      `<div class="allday-chip" data-id="${e.id}" style="background:${colorValue(e.color)};">${escapeHtml(e.title)}</div>`
+      `<div class="allday-chip" data-id="${e.id}" style="background:${colorValue(e.color)}; color:${contrastTextColor(e.color)};">${escapeHtml(e.title)}</div>`
     ).join("");
     allDayRow.querySelectorAll(".allday-chip").forEach(chip => {
       chip.addEventListener("click", () => openEdit(chip.dataset.id));
@@ -899,10 +921,11 @@ function renderTimelineEvents(timedEvents) {
     const widthPct = 100 / totalCols;
     const leftPct = col * widthPct;
     const editable = e.id === editModeEventId;
-    return `<div class="timeline-event${editable ? " edit-mode" : ""}" data-id="${e.id}" style="top:${top}px; height:${height}px; right:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); background:${colorValue(e.color)};">
-      <div class="te-title">${escapeHtml(e.title)}</div>
-      <div class="te-time">${segmentLabel(e, selectedDate)}</div>
-      ${e.location && height > 40 ? `<div class="te-time te-location" data-loc="${escapeHtml(e.location)}">📍 ${escapeHtml(e.location)}</div>` : ""}
+    const textColor = contrastTextColor(e.color);
+    return `<div class="timeline-event${editable ? " edit-mode" : ""}" data-id="${e.id}" style="top:${top}px; height:${height}px; right:calc(${leftPct}% + 2px); width:calc(${widthPct}% - 4px); background:${colorValue(e.color)}; color:${textColor};">
+      <div class="te-title" style="color:${textColor};">${escapeHtml(e.title)}</div>
+      <div class="te-time" style="color:${textColor}; opacity:.85;">${segmentLabel(e, selectedDate)}</div>
+      ${e.location && height > 40 ? `<div class="te-time te-location" style="color:${textColor}; opacity:.85;" data-loc="${escapeHtml(e.location)}">📍 ${escapeHtml(e.location)}</div>` : ""}
       ${editable ? `<div class="te-handle te-handle-top" data-handle="start"></div><div class="te-handle te-handle-bottom" data-handle="end"></div>` : ""}
     </div>`;
   }).join("");
@@ -1696,10 +1719,11 @@ function renderMiniTimeline(e) {
   }
   const evTop = (s - winStart) * pxPerMin;
   const evHeight = Math.max((en - s) * pxPerMin, 24);
-  html += `<div class="mini-event-block" style="top:${evTop}px; height:${evHeight}px; background:${colorValue(e.color)};">
-    <div class="mini-event-title">${escapeHtml(e.title || "")}</div>
-    ${e.location ? `<div class="mini-event-loc">📍 ${escapeHtml(e.location)}</div>` : ""}
-    <div class="mini-event-time">${minutesToTime(s)} - ${minutesToTime(en)}</div>
+  const miniTextColor = contrastTextColor(e.color);
+  html += `<div class="mini-event-block" style="top:${evTop}px; height:${evHeight}px; background:${colorValue(e.color)}; color:${miniTextColor};">
+    <div class="mini-event-title" style="color:${miniTextColor};">${escapeHtml(e.title || "")}</div>
+    ${e.location ? `<div class="mini-event-loc" style="color:${miniTextColor}; opacity:.85;">📍 ${escapeHtml(e.location)}</div>` : ""}
+    <div class="mini-event-time" style="color:${miniTextColor}; opacity:.85;">${minutesToTime(s)} - ${minutesToTime(en)}</div>
   </div>`;
   el.innerHTML = html;
   wrap.style.display = "block";
@@ -1815,7 +1839,7 @@ function openAdd(startTimeOverride) {
   document.getElementById("formEmailTo").value = "";
   document.getElementById("formError").style.display = "none";
   document.getElementById("formDelete").style.display = "none";
-  selectCategory("gold");
+  selectCategory(getDefaultCategoryId());
   setSelectedReminders([]);
   updateAllDayUI();
   renderPasteSuggestion();
@@ -2288,13 +2312,20 @@ let editingCategoryId = null;
 function renderCategoryManageList() {
   const cats = getCategories();
   const list = document.getElementById("categoryManageList");
-  list.innerHTML = cats.map(c => `<div class="picker-row" style="border-bottom:1px solid var(--surface2);">
-      <span class="picker-row-label"><span class="picker-color-dot" style="background:${colorValue(c.color)}; display:inline-block; margin-left:8px; vertical-align:middle;"></span>${escapeHtml(c.name)}</span>
-      <span>
+  list.innerHTML = cats.map(c => `<div class="picker-row" style="border-bottom:1px solid var(--surface2); align-items:center;">
+      <span class="picker-row-label"><span class="picker-color-dot" style="background:${colorValue(c.color)}; display:inline-block; margin-left:8px; vertical-align:middle;"></span>${escapeHtml(c.name)}${c.isDefault ? ' <span style="color:var(--gold); font-size:11px; font-weight:700;">· ברירת מחדל</span>' : ""}</span>
+      <span style="display:flex; align-items:center; gap:6px;">
+        ${c.isDefault ? "" : `<button type="button" class="icon-btn category-default-btn" data-id="${c.id}" style="color:var(--muted); font-size:12px; font-weight:700;">קבע כברירת מחדל</button>`}
         <button type="button" class="icon-btn category-edit-btn" data-id="${c.id}" style="color:var(--gold); font-size:13px; font-weight:700;">עריכה</button>
         <button type="button" class="icon-btn category-delete-btn" data-id="${c.id}" style="color:var(--danger); font-size:13px; font-weight:700;">מחיקה</button>
       </span>
     </div>`).join("");
+  list.querySelectorAll(".category-default-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      setDefaultCategory(btn.dataset.id);
+      renderCategoryManageList();
+    });
+  });
   list.querySelectorAll(".category-delete-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const cats2 = getCategories().filter(c => c.id !== btn.dataset.id);
@@ -2312,7 +2343,8 @@ function renderCategoryManageList() {
       document.getElementById("newCategoryName").value = cat.name;
       document.getElementById("newCategoryColorPicker").value = colorValue(cat.color);
       document.getElementById("addCategoryBtn").textContent = "עדכון קטגוריה";
-      document.getElementById("cancelEditCategoryBtn").style.display = "block";
+      document.getElementById("categoryFormCard").style.display = "block";
+      document.getElementById("showAddCategoryBtn").style.display = "none";
     });
   });
 }
@@ -2322,8 +2354,18 @@ function resetCategoryForm() {
   document.getElementById("newCategoryName").value = "";
   document.getElementById("newCategoryColorPicker").value = "#d1a24a";
   document.getElementById("addCategoryBtn").textContent = "הוספת קטגוריה";
-  document.getElementById("cancelEditCategoryBtn").style.display = "none";
+  document.getElementById("categoryFormCard").style.display = "none";
+  document.getElementById("showAddCategoryBtn").style.display = "block";
 }
+document.getElementById("showAddCategoryBtn").addEventListener("click", () => {
+  editingCategoryId = null;
+  document.getElementById("categoryFormLabel").textContent = "קטגוריה חדשה";
+  document.getElementById("newCategoryName").value = "";
+  document.getElementById("newCategoryColorPicker").value = "#d1a24a";
+  document.getElementById("addCategoryBtn").textContent = "הוספת קטגוריה";
+  document.getElementById("categoryFormCard").style.display = "block";
+  document.getElementById("showAddCategoryBtn").style.display = "none";
+});
 document.getElementById("cancelEditCategoryBtn").addEventListener("click", resetCategoryForm);
 document.getElementById("accountCategoriesBtn").addEventListener("click", () => {
   resetCategoryForm();
