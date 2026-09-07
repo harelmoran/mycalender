@@ -2504,7 +2504,10 @@ function googleEventToLocal(gEv) {
     }
   }
   const reminders = (gEv.reminders && gEv.reminders.overrides) ? gEv.reminders.overrides.map(o => o.minutes).filter(m => typeof m === "number") : [];
-  return { googleEventId: gEv.id, title: gEv.summary || "(ללא כותרת)", date, endDate, allDay: isAllDay, startTime, endTime, notes: gEv.description || "", location: gEv.location || "", color: "steel", reminders };
+  // Note: no color/categoryId here on purpose — those are ours, Google
+  // doesn't know about them, and merging this into an existing local event
+  // must never clobber whatever category the user already picked.
+  return { googleEventId: gEv.id, title: gEv.summary || "(ללא כותרת)", date, endDate, allDay: isAllDay, startTime, endTime, notes: gEv.description || "", location: gEv.location || "", reminders };
 }
 
 async function pushCreateToGoogle(e) {
@@ -2556,7 +2559,7 @@ async function syncFromGoogle() {
       if (idx >= 0) {
         events[idx] = { ...events[idx], ...local };
       } else {
-        events.push({ ...local, id: uid(), createdAt: Date.now() });
+        events.push({ ...local, id: uid(), color: "steel", categoryId: "steel", createdAt: Date.now() });
       }
       changed++;
     });
