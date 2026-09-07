@@ -839,7 +839,13 @@ function attachEventDrag(el) {
     try { cur.setPointerCapture(ev.pointerId); } catch(e) {}
     const startMin = timeToMinutes(ev_.startTime || "00:00");
     const durationMin = Math.max(timeToMinutes(ev_.endTime || ev_.startTime || "00:00") - startMin, DRAG_SNAP_MIN);
-    dragSession = { id, pointerId: ev.pointerId, startY: ev.clientY, startMin, durationMin, moved: false, dayChanged: false, edgeDir: null, edgeSince: null, pendingStart: null };
+    // grabOffsetMin: distance (in minutes) from the block's own top edge to
+    // where the finger actually grabbed it, so the block doesn't jump to
+    // align its top with the finger. Computed in content-space (relative to
+    // #timelineWrap's live position), so it stays correct through scrolling.
+    const wrapRect = document.getElementById("timelineWrap").getBoundingClientRect();
+    const grabOffsetMin = (ev.clientY - wrapRect.top) - startMin;
+    dragSession = { id, pointerId: ev.pointerId, startY: ev.clientY, grabOffsetMin, durationMin, moved: false, dayChanged: false, edgeDir: null, edgeSince: null, pendingStart: null };
     if (navigator.vibrate) navigator.vibrate(8);
   };
 
@@ -885,9 +891,10 @@ document.addEventListener("pointermove", (ev) => {
     if (!dragSession) return;
     const el = getTimelineEl(dragSession.id);
     if (!el) return;
-    const deltaY = ev.clientY - dragSession.startY;
-    if (Math.abs(deltaY) > 4) dragSession.moved = true;
-    let newStart = dragSession.startMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+    if (Math.abs(ev.clientY - dragSession.startY) > 4) dragSession.moved = true;
+    const wrapRect = document.getElementById("timelineWrap").getBoundingClientRect();
+    const fingerContentY = ev.clientY - wrapRect.top; // live, so it stays correct through auto-scroll
+    let newStart = Math.round((fingerContentY - dragSession.grabOffsetMin) / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
     newStart = Math.max(0, Math.min(newStart, 1440 - dragSession.durationMin));
     const topPx = (newStart / 60) * HOUR_H;
     el.style.top = topPx + "px";
@@ -966,6 +973,7 @@ function switchDragToDay(deltaDays, pointerId) {
 
 function finishDragSession() {
   if (!dragSession) return;
+  stopAutoScroll();
   const { id, pendingStart, durationMin, moved, dayChanged } = dragSession;
   const el = getTimelineEl(id);
   if (el) el.classList.remove("dragging");
@@ -1061,8 +1069,9 @@ function attachHandleDrag(el, handle) {
     ev.preventDefault();
     ev.stopPropagation();
     autoScrollDuringDrag(ev.clientY);
-    const deltaY = ev.clientY - startY;
-    let newVal = otherMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+    const wrapRect = document.getElementById("timelineWrap").getBoundingClientRect();
+    const fingerContentY = ev.clientY - wrapRect.top; // live, so it stays correct through auto-scroll
+    let newVal = Math.round(fingerContentY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
     if (which === "start") newVal = Math.max(0, Math.min(newVal, fixedMin - DRAG_SNAP_MIN));
     else newVal = Math.min(1440, Math.max(newVal, fixedMin + DRAG_SNAP_MIN));
     el._pendingHandleVal = newVal;
@@ -1088,6 +1097,7 @@ function attachHandleDrag(el, handle) {
 
   const finishHandleDrag = () => {
     if (!dragging) return;
+    stopAutoScroll();
     dragging = false;
     el.classList.remove("dragging");
     hideDragTimeLabel();
@@ -1218,20 +1228,30 @@ document.getElementById("dayViewAdd").addEventListener("click", openAdd);
 let createSession = null; // { draftId, startY, startMin, pendingEnd }
 const AUTOSCROLL_ZONE_PX = 55;
 const AUTOSCROLL_SPEED_PX = 14;
+let autoScrollDir = 0; // -1 up, 1 down, 0 none
+let autoScrollRafId = null;
 function autoScrollDuringDrag(clientY) {
   const content = document.getElementById("dayViewContent");
-  if (!content) return;
+  if (!content) { autoScrollDir = 0; return; }
   const rect = content.getBoundingClientRect();
-  if (clientY > rect.bottom - AUTOSCROLL_ZONE_PX) {
-    content.scrollTop = Math.min(content.scrollTop + AUTOSCROLL_SPEED_PX, content.scrollHeight - content.clientHeight);
-  } else if (clientY < rect.top + AUTOSCROLL_ZONE_PX) {
-    content.scrollTop = Math.max(content.scrollTop - AUTOSCROLL_SPEED_PX, 0);
+  if (clientY > rect.bottom - AUTOSCROLL_ZONE_PX) autoScrollDir = 1;
+  else if (clientY < rect.top + AUTOSCROLL_ZONE_PX) autoScrollDir = -1;
+  else autoScrollDir = 0;
+  if (autoScrollDir !== 0 && autoScrollRafId === null) {
+    const step = () => {
+      if (autoScrollDir === 0) { autoScrollRafId = null; return; }
+      const el = document.getElementById("dayViewContent");
+      if (el) el.scrollTop = Math.max(0, Math.min(el.scrollTop + autoScrollDir * AUTOSCROLL_SPEED_PX, el.scrollHeight - el.clientHeight));
+      autoScrollRafId = requestAnimationFrame(step);
+    };
+    autoScrollRafId = requestAnimationFrame(step);
   }
 }
+function stopAutoScroll() { autoScrollDir = 0; }
 (function() {
   let pressTimer = null;
   let armStartY = null, armStartX = null, armPointerId = null;
-  let lastMoveY = null, manualScrolling = false;
+  let lastMoveY = null, manualScrolling = false, scrollRafPending = false, pendingScrollDelta = 0;
   const wrap = document.getElementById("timelineWrap");
   const scrollEl = document.getElementById("dayViewContent");
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
@@ -1265,16 +1285,26 @@ function autoScrollDuringDrag(clientY) {
   });
   // The timeline has touch-action:none (see below for why), so plain
   // scrolling no longer happens natively — replicate it manually here
-  // whenever the touch isn't a long-press-in-progress.
+  // (batched via rAF to stay smooth) whenever the touch isn't an active
+  // long-press.
   wrap.addEventListener("pointermove", (ev) => {
     if (createSession) return; // handled at document level below
+    ev.preventDefault();
     const dy = ev.clientY - lastMoveY;
     lastMoveY = ev.clientY;
     if (pressTimer && (Math.abs(ev.clientY - armStartY) > 8 || Math.abs(ev.clientX - armStartX) > 8)) {
       cancelPress();
       manualScrolling = true;
     }
-    if (manualScrolling && scrollEl) scrollEl.scrollTop -= dy;
+    if (!manualScrolling || !scrollEl) return;
+    pendingScrollDelta += dy;
+    if (scrollRafPending) return;
+    scrollRafPending = true;
+    requestAnimationFrame(() => {
+      scrollRafPending = false;
+      scrollEl.scrollTop -= pendingScrollDelta;
+      pendingScrollDelta = 0;
+    });
   });
   wrap.addEventListener("pointerup", () => { cancelPress(); manualScrolling = false; });
   wrap.addEventListener("pointercancel", () => { cancelPress(); manualScrolling = false; });
@@ -1286,8 +1316,9 @@ document.addEventListener("pointermove", (ev) => {
   autoScrollDuringDrag(ev.clientY);
   const el = getTimelineEl(createSession.draftId);
   if (!el) return;
-  const deltaY = ev.clientY - createSession.startY;
-  let endMin = createSession.startMin + 30 + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+  const wrapRect = document.getElementById("timelineWrap").getBoundingClientRect();
+  const fingerContentY = ev.clientY - wrapRect.top; // live, so it stays correct through auto-scroll
+  let endMin = Math.round(fingerContentY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
   endMin = Math.max(createSession.startMin + 15, Math.min(endMin, 1440));
   createSession.pendingEnd = endMin;
   el.style.height = Math.max(((endMin - createSession.startMin) / 60) * HOUR_H, 22) + "px";
@@ -1297,6 +1328,7 @@ document.addEventListener("pointermove", (ev) => {
 });
 function finishCreateSession() {
   if (!createSession) return;
+  stopAutoScroll();
   const { draftId, pendingEnd } = createSession;
   hideDragTimeLabel();
   const el = getTimelineEl(draftId);
