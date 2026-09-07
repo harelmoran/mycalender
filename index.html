@@ -877,6 +877,7 @@ let dragRafPending = false;
 document.addEventListener("pointermove", (ev) => {
   if (!dragSession) return;
   ev.preventDefault();
+  autoScrollDuringDrag(ev.clientY);
   if (dragRafPending) return;
   dragRafPending = true;
   requestAnimationFrame(() => {
@@ -1059,6 +1060,7 @@ function attachHandleDrag(el, handle) {
     if (!dragging) return;
     ev.preventDefault();
     ev.stopPropagation();
+    autoScrollDuringDrag(ev.clientY);
     const deltaY = ev.clientY - startY;
     let newVal = otherMin + Math.round(deltaY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
     if (which === "start") newVal = Math.max(0, Math.min(newVal, fixedMin - DRAG_SNAP_MIN));
@@ -1214,6 +1216,18 @@ document.getElementById("dayViewAdd").addEventListener("click", openAdd);
 // Runs at the document level (not on the wrap itself) so it can't race with
 // the newly-created draft's own click/drag handlers once it renders mid-hold.
 let createSession = null; // { draftId, startY, startMin, pendingEnd }
+const AUTOSCROLL_ZONE_PX = 55;
+const AUTOSCROLL_SPEED_PX = 14;
+function autoScrollDuringDrag(clientY) {
+  const content = document.getElementById("dayViewContent");
+  if (!content) return;
+  const rect = content.getBoundingClientRect();
+  if (clientY > rect.bottom - AUTOSCROLL_ZONE_PX) {
+    content.scrollTop = Math.min(content.scrollTop + AUTOSCROLL_SPEED_PX, content.scrollHeight - content.clientHeight);
+  } else if (clientY < rect.top + AUTOSCROLL_ZONE_PX) {
+    content.scrollTop = Math.max(content.scrollTop - AUTOSCROLL_SPEED_PX, 0);
+  }
+}
 (function() {
   let pressTimer = null;
   let armStartY = null, armStartX = null, armPointerId = null;
@@ -1269,6 +1283,7 @@ let createSession = null; // { draftId, startY, startMin, pendingEnd }
 document.addEventListener("pointermove", (ev) => {
   if (!createSession) return;
   ev.preventDefault();
+  autoScrollDuringDrag(ev.clientY);
   const el = getTimelineEl(createSession.draftId);
   if (!el) return;
   const deltaY = ev.clientY - createSession.startY;
