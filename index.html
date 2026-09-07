@@ -858,6 +858,7 @@ function renderTimelineGrid() {
 let editModeEventId = null;
 
 function renderTimelineEvents(timedEvents) {
+  removeEventContextMenu(); // any previous render's leftover menu is now stale no matter how we got here
   const wrap = document.getElementById("timelineEvents");
   const withTimes = timedEvents.map(e => {
     const seg = getDaySegment(e, selectedDate);
@@ -948,7 +949,7 @@ function attachEventDrag(el) {
   let armStartY = 0;
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
 
-  const beginDrag = (ev, ev_, id) => {
+  const beginDrag = (ev, ev_, id, viaLongPress) => {
     removeEventContextMenu();
     const cur = getTimelineEl(id);
     if (!cur) return;
@@ -962,7 +963,7 @@ function attachEventDrag(el) {
     // #timelineWrap's live position), so it stays correct through scrolling.
     const wrapRect = document.getElementById("timelineWrap").getBoundingClientRect();
     const grabOffsetMin = (ev.clientY - wrapRect.top) - startMin;
-    dragSession = { id, pointerId: ev.pointerId, startY: ev.clientY, grabOffsetMin, durationMin, moved: false, dayChanged: false, edgeDir: null, edgeSince: null, pendingStart: null };
+    dragSession = { id, pointerId: ev.pointerId, startY: ev.clientY, grabOffsetMin, durationMin, moved: false, dayChanged: false, edgeDir: null, edgeSince: null, pendingStart: null, viaLongPress: !!viaLongPress };
     if (navigator.vibrate) navigator.vibrate(8);
   };
 
@@ -976,12 +977,12 @@ function attachEventDrag(el) {
     armStartY = ev.clientY;
     cancelPress();
     if (id === editModeEventId) {
-      beginDrag(ev, ev_, id); // already in edit mode — move immediately, no long-press needed
+      beginDrag(ev, ev_, id, false); // already in edit mode — move immediately, no long-press needed, and no copy/delete menu on a no-op tap
     } else {
       pressTimer = setTimeout(() => {
         editModeEventId = id;
         el.classList.add("edit-mode");
-        beginDrag(ev, ev_, id);
+        beginDrag(ev, ev_, id, true);
       }, DRAG_LONG_PRESS_MS);
     }
   });
@@ -1091,7 +1092,7 @@ function switchDragToDay(deltaDays, pointerId) {
 function finishDragSession() {
   if (!dragSession) return;
   stopAutoScroll();
-  const { id, pendingStart, durationMin, moved, dayChanged } = dragSession;
+  const { id, pendingStart, durationMin, moved, dayChanged, viaLongPress } = dragSession;
   const el = getTimelineEl(id);
   if (el) el.classList.remove("dragging");
   hideDragTimeLabel();
@@ -1109,7 +1110,7 @@ function finishDragSession() {
   }
   dragSession = null;
   renderAgenda();
-  if (!moved && !dayChanged) {
+  if (!moved && !dayChanged && viaLongPress) {
     const freshEl = getTimelineEl(id);
     if (freshEl) showEventContextMenu(freshEl, id);
   }
@@ -1437,7 +1438,7 @@ function startMomentumScroll(scrollEl, velocity) {
       events.push(newEvent);
       persist();
       renderAgenda();
-      createSession = { draftId: newEvent.id, startY: armStartY, startMin: minutes, pendingEnd: null };
+      createSession = { draftId: newEvent.id, anchorMin: minutes, pendingStart: minutes, pendingEnd: Math.min(minutes + 30, 1439) };
       const el = getTimelineEl(newEvent.id);
       if (el) { el.classList.add("dragging"); try { el.setPointerCapture(armPointerId); } catch(e) {} }
       if (navigator.vibrate) navigator.vibrate(8);
@@ -1490,23 +1491,41 @@ document.addEventListener("pointermove", (ev) => {
   if (!el) return;
   const wrapRect = document.getElementById("timelineWrap").getBoundingClientRect();
   const fingerContentY = ev.clientY - wrapRect.top; // live, so it stays correct through auto-scroll
-  let endMin = Math.round(fingerContentY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
-  endMin = Math.max(createSession.startMin + 15, Math.min(endMin, 1440));
+  let fingerMin = Math.round(fingerContentY / DRAG_SNAP_MIN) * DRAG_SNAP_MIN;
+  fingerMin = Math.max(0, Math.min(fingerMin, 1440));
+  // Dragging past the original press point in either direction extends that
+  // edge — drag down to push the end later, drag up to pull the start
+  // earlier — same idea as a native calendar's drag-to-create.
+  let startMin, endMin;
+  if (fingerMin < createSession.anchorMin) {
+    startMin = fingerMin;
+    endMin = Math.max(createSession.anchorMin, startMin + 15);
+  } else {
+    startMin = createSession.anchorMin;
+    endMin = Math.max(fingerMin, startMin + 15);
+  }
+  createSession.pendingStart = startMin;
   createSession.pendingEnd = endMin;
-  el.style.height = Math.max(((endMin - createSession.startMin) / 60) * HOUR_H, 22) + "px";
+  el.style.top = ((startMin / 60) * HOUR_H) + "px";
+  el.style.height = Math.max(((endMin - startMin) / 60) * HOUR_H, 22) + "px";
   const timeEl = el.querySelector(".te-time");
-  if (timeEl) timeEl.textContent = minutesToTime(createSession.startMin) + " - " + minutesToTime(endMin);
-  showDragTimeLabel((endMin / 60) * HOUR_H, minutesToTime(endMin));
+  if (timeEl) timeEl.textContent = minutesToTime(startMin) + " - " + minutesToTime(endMin);
+  const labelMin = fingerMin < createSession.anchorMin ? startMin : endMin;
+  showDragTimeLabel((labelMin / 60) * HOUR_H, minutesToTime(labelMin));
 });
 function finishCreateSession() {
   if (!createSession) return;
   stopAutoScroll();
-  const { draftId, pendingEnd } = createSession;
+  const { draftId, pendingStart, pendingEnd } = createSession;
   hideDragTimeLabel();
   const el = getTimelineEl(draftId);
   if (el) { el.classList.remove("dragging"); el.dataset.justDragged = "1"; }
   const ev_ = events.find(x => x.id === draftId);
-  if (ev_ && pendingEnd != null) { ev_.endTime = minutesToTime(pendingEnd); persist(); }
+  if (ev_) {
+    if (pendingStart != null) ev_.startTime = minutesToTime(pendingStart);
+    if (pendingEnd != null) ev_.endTime = minutesToTime(pendingEnd);
+    persist();
+  }
   createSession = null;
   openEdit(draftId);
 }
@@ -1659,6 +1678,7 @@ function openView(id) {
   const e = events.find(x => x.id === id);
   if (!e) return;
   viewingId = id;
+  if (editModeEventId !== null) { editModeEventId = null; removeEventContextMenu(); }
   document.getElementById("viewTitle").textContent = e.title || "(ללא כותרת)";
   document.getElementById("viewColorDot").style.background = colorValue(e.color);
 
@@ -1748,6 +1768,7 @@ document.getElementById("pasteConfirmBtn").addEventListener("click", () => {
 
 function openAdd(startTimeOverride) {
   editingId = null;
+  if (editModeEventId !== null) { editModeEventId = null; removeEventContextMenu(); }
   document.getElementById("formTitleHead").textContent = "אירוע חדש";
   document.getElementById("formTitle").value = "";
   document.getElementById("formDate").value = selectedDate;
@@ -1773,6 +1794,7 @@ function openEdit(id) {
   const e = events.find(x => x.id === id);
   if (!e) return;
   editingId = id;
+  if (editModeEventId !== null) { editModeEventId = null; removeEventContextMenu(); }
   document.getElementById("formTitleHead").textContent = "עריכת אירוע";
   document.getElementById("formTitle").value = e.title;
   document.getElementById("formDate").value = e.date;
@@ -1787,7 +1809,11 @@ function openEdit(id) {
   document.getElementById("formDelete").style.display = "block";
   selectCategory(e.categoryId || e.color || "gold");
   setSelectedReminders(e.reminders || []);
-  document.getElementById("pasteSuggestionRow").style.display = "none";
+  // Fresh drafts (created via long-press on empty timeline, title still
+  // empty) are effectively a "new event" — offer the paste suggestion here
+  // too, same as the regular "+" flow.
+  if (!e.title) renderPasteSuggestion();
+  else document.getElementById("pasteSuggestionRow").style.display = "none";
   updateAllDayUI();
   showOverlay("formOverlay");
 }
