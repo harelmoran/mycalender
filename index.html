@@ -257,6 +257,10 @@
       <h2 id="formTitleHead">אירוע חדש</h2>
       <button class="icon-btn" id="closeForm" style="color:var(--muted); font-size:18px;">×</button>
     </div>
+    <div class="picker-row" id="pasteSuggestionRow" style="display:none; background: var(--gold); color:#1b1406; border-radius:12px; padding:12px 14px; margin-bottom:10px; cursor:pointer;">
+      <span class="picker-row-label" style="color:#1b1406; font-weight:700;">📋 <span id="pasteSuggestionText"></span></span>
+      <span style="font-weight:800;">הדבקה</span>
+    </div>
     <div class="form-card">
       <label>כותרת</label>
       <input type="text" id="formTitle" placeholder="שם האירוע" autocomplete="off">
@@ -922,6 +926,7 @@ function enterEditMode(id) {
 function exitEditMode() {
   if (editModeEventId === null) return;
   editModeEventId = null;
+  removeEventContextMenu();
   renderAgenda();
 }
 document.addEventListener("pointerdown", (ev) => {
@@ -941,6 +946,7 @@ function attachEventDrag(el) {
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
 
   const beginDrag = (ev, ev_, id) => {
+    removeEventContextMenu();
     const cur = getTimelineEl(id);
     if (!cur) return;
     cur.classList.add("dragging");
@@ -1109,15 +1115,27 @@ document.addEventListener("pointerup", finishDragSession);
 document.addEventListener("pointercancel", finishDragSession);
 
 
-function duplicateEvent(id) {
+const CLIPBOARD_KEY = "event_clipboard_v1";
+function getClipboardEvent() {
+  try { return JSON.parse(localStorage.getItem(nsKey(CLIPBOARD_KEY)) || "null"); } catch(e) { return null; }
+}
+function setClipboardEvent(obj) { localStorage.setItem(nsKey(CLIPBOARD_KEY), JSON.stringify(obj)); }
+function clearClipboardEvent() { localStorage.removeItem(nsKey(CLIPBOARD_KEY)); }
+
+function copyEventToClipboard(id) {
   const e = events.find(x => x.id === id);
   if (!e) return;
-  const copy = { ...e, id: uid(), googleEventId: null, createdAt: Date.now() };
-  events.push(copy);
-  persist();
-  renderAgenda();
-  pushCreateToGoogle(copy);
-  showToast("האירוע שוכפל");
+  let durationMinutes = null;
+  if (!e.allDay) {
+    const startMin = timeToMinutes(e.startTime || "00:00");
+    const endMin = timeToMinutes(e.endTime || e.startTime || "00:00");
+    durationMinutes = Math.max(endMin - startMin, 15);
+  }
+  setClipboardEvent({
+    title: e.title || "", location: e.location || "", notes: e.notes || "",
+    categoryId: e.categoryId || e.color || "gold", allDay: !!e.allDay, durationMinutes
+  });
+  showToast("האירוע הועתק — צור אירוע חדש בכל יום כדי להדביק");
 }
 
 function removeEventContextMenu() {
@@ -1141,7 +1159,8 @@ function showEventContextMenu(el, id) {
   menu.querySelector('[data-action="copy"]').addEventListener("click", (ev) => {
     ev.stopPropagation();
     removeEventContextMenu();
-    duplicateEvent(id);
+    copyEventToClipboard(id);
+    exitEditMode();
   });
   menu.querySelector('[data-action="delete"]').addEventListener("click", (ev) => {
     ev.stopPropagation();
@@ -1686,6 +1705,30 @@ document.getElementById("viewNotesToggle").addEventListener("click", () => {
   document.getElementById("viewNotesToggle").textContent = expanded ? "הצגת פחות" : "הצגת עוד";
 });
 
+function renderPasteSuggestion() {
+  const row = document.getElementById("pasteSuggestionRow");
+  const clip = getClipboardEvent();
+  if (!clip) { row.style.display = "none"; return; }
+  document.getElementById("pasteSuggestionText").textContent = "יש אירוע מועתק: " + clip.title;
+  row.style.display = "flex";
+}
+document.getElementById("pasteSuggestionRow").addEventListener("click", () => {
+  const clip = getClipboardEvent();
+  if (!clip) return;
+  document.getElementById("formTitle").value = clip.title;
+  document.getElementById("formLocation").value = clip.location;
+  document.getElementById("formNotes").value = clip.notes;
+  selectCategory(clip.categoryId);
+  document.getElementById("formAllDay").checked = clip.allDay;
+  if (!clip.allDay && clip.durationMinutes) {
+    const startVal = document.getElementById("formStart").value || nearestRoundHourTimes().start;
+    document.getElementById("formStart").value = startVal;
+    document.getElementById("formEnd").value = minutesToTime(timeToMinutes(startVal) + clip.durationMinutes);
+  }
+  updateAllDayUI();
+  showToast("הפרטים הודבקו");
+});
+
 function openAdd(startTimeOverride) {
   editingId = null;
   document.getElementById("formTitleHead").textContent = "אירוע חדש";
@@ -1706,6 +1749,7 @@ function openAdd(startTimeOverride) {
   selectCategory("gold");
   setSelectedReminders([]);
   updateAllDayUI();
+  renderPasteSuggestion();
   showOverlay("formOverlay");
 }
 function openEdit(id) {
@@ -1726,6 +1770,7 @@ function openEdit(id) {
   document.getElementById("formDelete").style.display = "block";
   selectCategory(e.categoryId || e.color || "gold");
   setSelectedReminders(e.reminders || []);
+  document.getElementById("pasteSuggestionRow").style.display = "none";
   updateAllDayUI();
   showOverlay("formOverlay");
 }
