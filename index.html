@@ -2672,19 +2672,64 @@ setInterval(() => { if (document.visibilityState === "visible") syncFromGoogle()
 
 // ---- .ics export ----
 // ---- Send by email ----
-function buildRawEmail(to, subject, body) {
+function icsEscape(s) {
+  return (s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+}
+function toICSDateUTC(dateStr, timeStr) {
+  const d = new Date(`${dateStr}T${timeStr || "00:00"}:00`);
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+function buildICS({ title, date, endDate, allDay, startTime, endTime, location, notes }) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  let dtstart, dtend;
+  if (allDay) {
+    dtstart = "DTSTART;VALUE=DATE:" + date.replace(/-/g, "");
+    dtend = "DTEND;VALUE=DATE:" + isoAddDays(endDate, 1).replace(/-/g, "");
+  } else {
+    dtstart = "DTSTART:" + toICSDateUTC(date, startTime);
+    dtend = "DTEND:" + toICSDateUTC(endDate, endTime || startTime);
+  }
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Yoman Calendar//HE", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    "UID:" + uid() + "@yoman-app",
+    "DTSTAMP:" + stamp,
+    dtstart, dtend,
+    "SUMMARY:" + icsEscape(title),
+    location ? "LOCATION:" + icsEscape(location) : null,
+    notes ? "DESCRIPTION:" + icsEscape(notes) : null,
+    "END:VEVENT", "END:VCALENDAR"
+  ].filter(Boolean);
+  return lines.join("\r\n");
+}
+function buildRawEmail(to, subject, body, icsContent) {
   const encodedSubject = "=?UTF-8?B?" + btoa(unescape(encodeURIComponent(subject))) + "?=";
+  const boundary = "bnd_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const icsBase64 = btoa(unescape(encodeURIComponent(icsContent))).match(/.{1,76}/g).join("\r\n");
   const message = [
     "To: " + to,
     "Subject: " + encodedSubject,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
     "Content-Type: text/plain; charset=UTF-8",
     "",
-    body
+    body,
+    "",
+    `--${boundary}`,
+    'Content-Type: text/calendar; charset=UTF-8; method=PUBLISH; name="event.ics"',
+    "Content-Transfer-Encoding: base64",
+    'Content-Disposition: attachment; filename="event.ics"',
+    "",
+    icsBase64,
+    "",
+    `--${boundary}--`
   ].join("\r\n");
   return btoa(unescape(encodeURIComponent(message))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-async function sendViaGmail(to, subject, text) {
-  const raw = buildRawEmail(to, subject, text);
+async function sendViaGmail(to, subject, text, icsContent) {
+  const raw = buildRawEmail(to, subject, text, icsContent);
   return googleApiFetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
     body: JSON.stringify({ raw })
@@ -2714,12 +2759,16 @@ document.getElementById("sendEmailBtn").addEventListener("click", async () => {
   lines.push("שעה: " + (allDay ? "כל היום" : (startTime || "") + (endTime ? " - " + endTime : "")));
   if (location) lines.push("מיקום: " + location);
   if (notes) { lines.push(""); lines.push(notes); }
+  lines.push("");
+  lines.push("מצורף קובץ יומן (.ics) — פתח אותו כדי להוסיף את האירוע ליומן שלך.");
+
+  const icsContent = buildICS({ title, date, endDate: endDateVal, allDay, startTime, endTime, location, notes });
 
   const btn = document.getElementById("sendEmailBtn");
   const original = btn.textContent;
   btn.textContent = "⏳"; btn.disabled = true;
   try {
-    await sendViaGmail(to, title, lines.join("\n"));
+    await sendViaGmail(to, title, lines.join("\n"), icsContent);
     if (editingId) {
       const ev_ = events.find(x => x.id === editingId);
       if (ev_) {
