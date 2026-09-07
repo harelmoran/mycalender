@@ -257,9 +257,12 @@
       <h2 id="formTitleHead">אירוע חדש</h2>
       <button class="icon-btn" id="closeForm" style="color:var(--muted); font-size:18px;">×</button>
     </div>
-    <div class="picker-row" id="pasteSuggestionRow" style="display:none; background: var(--gold); color:#1b1406; border-radius:12px; padding:12px 14px; margin-bottom:10px; cursor:pointer;">
-      <span class="picker-row-label" style="color:#1b1406; font-weight:700;">📋 <span id="pasteSuggestionText"></span></span>
-      <span style="font-weight:800;">הדבקה</span>
+    <div class="picker-row" id="pasteSuggestionRow" style="display:none; align-items:flex-start; background: var(--gold); color:#1b1406; border-radius:12px; padding:12px 14px; margin-bottom:10px;">
+      <div style="flex:1;">
+        <div style="font-weight:800; font-size:14px; margin-bottom:4px;" id="pasteTitle"></div>
+        <div style="font-size:12px; line-height:1.6;" id="pasteMeta"></div>
+      </div>
+      <button type="button" id="pasteConfirmBtn" style="background:#1b1406; color:var(--gold); border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:800; cursor:pointer; flex-shrink:0;">אישור</button>
     </div>
     <div class="form-card">
       <label>כותרת</label>
@@ -1115,12 +1118,12 @@ document.addEventListener("pointerup", finishDragSession);
 document.addEventListener("pointercancel", finishDragSession);
 
 
-const CLIPBOARD_KEY = "event_clipboard_v1";
-function getClipboardEvent() {
-  try { return JSON.parse(localStorage.getItem(nsKey(CLIPBOARD_KEY)) || "null"); } catch(e) { return null; }
-}
-function setClipboardEvent(obj) { localStorage.setItem(nsKey(CLIPBOARD_KEY), JSON.stringify(obj)); }
-function clearClipboardEvent() { localStorage.removeItem(nsKey(CLIPBOARD_KEY)); }
+// In-memory only (not localStorage) — a "copied" event lasts for this app
+// session, and naturally clears when the app is reloaded/reopened.
+let clipboardEvent = null;
+function getClipboardEvent() { return clipboardEvent; }
+function setClipboardEvent(obj) { clipboardEvent = obj; }
+function clearClipboardEvent() { clipboardEvent = null; }
 
 function copyEventToClipboard(id) {
   const e = events.find(x => x.id === id);
@@ -1133,7 +1136,8 @@ function copyEventToClipboard(id) {
   }
   setClipboardEvent({
     title: e.title || "", location: e.location || "", notes: e.notes || "",
-    categoryId: e.categoryId || e.color || "gold", allDay: !!e.allDay, durationMinutes
+    categoryId: e.categoryId || e.color || "gold", allDay: !!e.allDay,
+    startTime: e.startTime || "", endTime: e.endTime || "", durationMinutes
   });
   showToast("האירוע הועתק — צור אירוע חדש בכל יום כדי להדביק");
 }
@@ -1322,7 +1326,7 @@ function closeDayView() {
   renderCalendar();
 }
 document.getElementById("dayViewBack").addEventListener("click", closeDayView);
-document.getElementById("dayViewAdd").addEventListener("click", openAdd);
+document.getElementById("dayViewAdd").addEventListener("click", () => openAdd());
 
 // swipe left/right on the day view to move between days
 (function() {
@@ -1705,14 +1709,27 @@ document.getElementById("viewNotesToggle").addEventListener("click", () => {
   document.getElementById("viewNotesToggle").textContent = expanded ? "הצגת פחות" : "הצגת עוד";
 });
 
+function durationLabel(mins) {
+  if (mins == null) return "";
+  if (mins < 60) return mins + " דקות";
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h} שעות ו-${m} דקות` : `${h} שעות`;
+}
 function renderPasteSuggestion() {
   const row = document.getElementById("pasteSuggestionRow");
   const clip = getClipboardEvent();
   if (!clip) { row.style.display = "none"; return; }
-  document.getElementById("pasteSuggestionText").textContent = "יש אירוע מועתק: " + clip.title;
+  document.getElementById("pasteTitle").textContent = clip.title || "(ללא כותרת)";
+  const metaLines = [];
+  const cat = getCategories().find(c => c.id === clip.categoryId);
+  metaLines.push("קטגוריה: " + (cat ? cat.name : "כללי"));
+  metaLines.push(clip.allDay ? "יום שלם" : "שעה: " + (clip.startTime || "") + " - " + (clip.endTime || ""));
+  if (clip.location) metaLines.push("מיקום: " + clip.location);
+  if (clip.notes) metaLines.push("הערות: " + clip.notes);
+  document.getElementById("pasteMeta").innerHTML = metaLines.map(escapeHtml).join("<br>");
   row.style.display = "flex";
 }
-document.getElementById("pasteSuggestionRow").addEventListener("click", () => {
+document.getElementById("pasteConfirmBtn").addEventListener("click", () => {
   const clip = getClipboardEvent();
   if (!clip) return;
   document.getElementById("formTitle").value = clip.title;
@@ -1720,12 +1737,12 @@ document.getElementById("pasteSuggestionRow").addEventListener("click", () => {
   document.getElementById("formNotes").value = clip.notes;
   selectCategory(clip.categoryId);
   document.getElementById("formAllDay").checked = clip.allDay;
-  if (!clip.allDay && clip.durationMinutes) {
-    const startVal = document.getElementById("formStart").value || nearestRoundHourTimes().start;
-    document.getElementById("formStart").value = startVal;
-    document.getElementById("formEnd").value = minutesToTime(timeToMinutes(startVal) + clip.durationMinutes);
+  if (!clip.allDay && clip.startTime) {
+    document.getElementById("formStart").value = clip.startTime;
+    document.getElementById("formEnd").value = clip.endTime || minutesToTime(timeToMinutes(clip.startTime) + (clip.durationMinutes || 30));
   }
   updateAllDayUI();
+  document.getElementById("pasteSuggestionRow").style.display = "none";
   showToast("הפרטים הודבקו");
 });
 
@@ -1736,7 +1753,7 @@ function openAdd(startTimeOverride) {
   document.getElementById("formDate").value = selectedDate;
   document.getElementById("formEndDate").value = selectedDate;
   document.getElementById("formAllDay").checked = false;
-  const defaults = startTimeOverride
+  const defaults = (typeof startTimeOverride === "string" && startTimeOverride)
     ? { start: startTimeOverride, end: minutesToTime(Math.min(timeToMinutes(startTimeOverride) + 30, 1439)) }
     : nearestRoundHourTimes();
   document.getElementById("formStart").value = defaults.start;
@@ -1775,7 +1792,7 @@ function openEdit(id) {
   showOverlay("formOverlay");
 }
 
-document.getElementById("addBtn").addEventListener("click", openAdd);
+document.getElementById("addBtn").addEventListener("click", () => openAdd());
 
 // ---- Add event from image (AI vision via Mistral Pixtral, through our Vercel API) ----
 document.getElementById("scanImageBtn").addEventListener("click", () => document.getElementById("scanImageInput").click());
