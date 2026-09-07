@@ -1248,19 +1248,48 @@ function autoScrollDuringDrag(clientY) {
   }
 }
 function stopAutoScroll() { autoScrollDir = 0; }
+let momentumRafId = null;
+function stopMomentumScroll() { if (momentumRafId) { cancelAnimationFrame(momentumRafId); momentumRafId = null; } }
+function startMomentumScroll(scrollEl, velocity) {
+  // velocity in px/ms (positive = finger moved down = content should keep
+  // scrolling up, matching the sign convention used while dragging)
+  stopMomentumScroll();
+  let v = velocity;
+  const decayPerMs = 0.998; // time-based decay, independent of frame rate
+  let lastT = performance.now();
+  const step = (now) => {
+    const dt = Math.min(now - lastT, 48); // clamp to avoid huge jumps after a stall
+    lastT = now;
+    v *= Math.pow(decayPerMs, dt);
+    if (Math.abs(v) < 0.01) { momentumRafId = null; return; }
+    const next = scrollEl.scrollTop - v * dt;
+    if (next <= 0 || next >= scrollEl.scrollHeight - scrollEl.clientHeight) {
+      scrollEl.scrollTop = Math.max(0, Math.min(next, scrollEl.scrollHeight - scrollEl.clientHeight));
+      momentumRafId = null;
+      return;
+    }
+    scrollEl.scrollTop = next;
+    momentumRafId = requestAnimationFrame(step);
+  };
+  momentumRafId = requestAnimationFrame(step);
+}
 (function() {
   let pressTimer = null;
   let armStartY = null, armStartX = null, armPointerId = null;
-  let lastMoveY = null, manualScrolling = false, scrollRafPending = false, pendingScrollDelta = 0;
+  let lastMoveY = null, lastMoveT = 0, velocity = 0;
+  let manualScrolling = false, scrollRafPending = false, pendingScrollDelta = 0;
   const wrap = document.getElementById("timelineWrap");
   const scrollEl = document.getElementById("dayViewContent");
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
 
   wrap.addEventListener("pointerdown", (ev) => {
+    stopMomentumScroll();
     if (ev.target.closest(".timeline-event") || ev.target.closest("#eventContextMenu")) return;
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
     armStartY = ev.clientY; armStartX = ev.clientX; armPointerId = ev.pointerId;
     lastMoveY = ev.clientY;
+    lastMoveT = performance.now();
+    velocity = 0;
     manualScrolling = false;
     cancelPress();
     pressTimer = setTimeout(() => {
@@ -1285,13 +1314,20 @@ function stopAutoScroll() { autoScrollDir = 0; }
   });
   // The timeline has touch-action:none (see below for why), so plain
   // scrolling no longer happens natively — replicate it manually here
-  // (batched via rAF to stay smooth) whenever the touch isn't an active
-  // long-press.
+  // (batched via rAF to stay smooth, with momentum on release) whenever the
+  // touch isn't an active long-press.
   wrap.addEventListener("pointermove", (ev) => {
     if (createSession) return; // handled at document level below
     ev.preventDefault();
+    const now = performance.now();
     const dy = ev.clientY - lastMoveY;
+    const dt = now - lastMoveT;
+    if (dt > 0) {
+      const instantV = dy / dt; // px/ms
+      velocity = velocity * 0.7 + instantV * 0.3; // smooth out jitter between samples
+    }
     lastMoveY = ev.clientY;
+    lastMoveT = now;
     if (pressTimer && (Math.abs(ev.clientY - armStartY) > 8 || Math.abs(ev.clientX - armStartX) > 8)) {
       cancelPress();
       manualScrolling = true;
@@ -1306,8 +1342,13 @@ function stopAutoScroll() { autoScrollDir = 0; }
       pendingScrollDelta = 0;
     });
   });
-  wrap.addEventListener("pointerup", () => { cancelPress(); manualScrolling = false; });
-  wrap.addEventListener("pointercancel", () => { cancelPress(); manualScrolling = false; });
+  const finishScroll = () => {
+    cancelPress();
+    if (manualScrolling && scrollEl && Math.abs(velocity) > 0.05) startMomentumScroll(scrollEl, velocity);
+    manualScrolling = false;
+  };
+  wrap.addEventListener("pointerup", finishScroll);
+  wrap.addEventListener("pointercancel", finishScroll);
 })();
 
 document.addEventListener("pointermove", (ev) => {
