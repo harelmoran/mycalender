@@ -304,7 +304,7 @@
     </div>
     <div class="form-card">
       <div class="picker-row" id="emailPickerRow">
-        <span class="picker-row-label">שליחת פרטי האירוע במייל</span>
+        <span class="picker-row-label">מוזמנים</span>
         <span class="picker-row-value"><span id="emailRowText">שליחה</span><span class="picker-row-chevron" dir="ltr" style="unicode-bidi: isolate-override;">‹</span></span>
       </div>
     </div>
@@ -333,11 +333,15 @@
 <div class="overlay" id="emailSendOverlay">
   <div class="modal">
     <div class="modal-drag-handle"></div>
-    <h2 style="text-align:center; margin:0 0 10px;">שליחת אירוע במייל</h2>
+    <h2 style="text-align:center; margin:0 0 10px;">מוזמנים</h2>
     <label>כתובת אימייל</label>
     <div class="location-row">
       <input type="email" id="formEmailTo" placeholder="כתובת אימייל" autocomplete="off">
       <button type="button" class="map-btn" id="sendEmailBtn" title="שליחה">✉️</button>
+    </div>
+    <div id="emailSentToWrap" style="display:none;">
+      <label>כבר נשלח אל</label>
+      <div id="emailSentToList"></div>
     </div>
   </div>
 </div>
@@ -1563,7 +1567,19 @@ document.getElementById("reminderPickerRow").addEventListener("click", () => {
   showOverlay("reminderPickerOverlay");
 });
 
-document.getElementById("emailPickerRow").addEventListener("click", () => showOverlay("emailSendOverlay"));
+function renderEmailSentToList(e) {
+  const wrap = document.getElementById("emailSentToWrap");
+  const list = document.getElementById("emailSentToList");
+  const sentTo = (e && e.sentTo) || [];
+  if (!sentTo.length) { wrap.style.display = "none"; return; }
+  list.innerHTML = sentTo.map(addr => `<div class="picker-row" style="border-bottom:1px solid var(--surface); padding:8px 0;"><span class="picker-row-label" style="font-size:13px;">${escapeHtml(addr)}</span></div>`).join("");
+  wrap.style.display = "block";
+}
+document.getElementById("emailPickerRow").addEventListener("click", () => {
+  const e = editingId ? events.find(x => x.id === editingId) : null;
+  renderEmailSentToList(e);
+  showOverlay("emailSendOverlay");
+});
 
 
 function nearestRoundHourTimes() {
@@ -2535,10 +2551,24 @@ document.getElementById("sendEmailBtn").addEventListener("click", async () => {
   btn.textContent = "⏳"; btn.disabled = true;
   try {
     await sendViaGmail(to, title, lines.join("\n"));
-    showToast("נשלח בהצלחה מה-Gmail שלך ל-" + to);
+    if (editingId) {
+      const ev_ = events.find(x => x.id === editingId);
+      if (ev_) {
+        ev_.sentTo = ev_.sentTo || [];
+        if (!ev_.sentTo.includes(to)) ev_.sentTo.push(to);
+        persist();
+        renderEmailSentToList(ev_);
+      }
+    }
+    showToast("✅ נשלח בהצלחה מה-Gmail שלך ל-" + to);
     document.getElementById("formEmailTo").value = "";
   } catch (err) {
-    showToast("השליחה נכשלה: " + (err.message || "שגיאה לא ידועה"));
+    console.error("Gmail send error:", err);
+    let msg = err.message || "שגיאה לא ידועה";
+    if (msg.includes("insufficient") || msg.includes("403") || msg.includes("scope")) {
+      msg = "חסרה הרשאת שליחת מייל — התנתק והתחבר מחדש ל-Google (במסך המשתמש) כדי לאשר את זה";
+    }
+    showToast("השליחה נכשלה: " + msg);
   } finally {
     btn.textContent = original; btn.disabled = false;
   }
