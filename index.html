@@ -23,7 +23,12 @@
   }
   * { box-sizing: border-box; }
   input, select, textarea { font-size: 16px; }
-  body { margin:0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; touch-action: manipulation; }
+  html { overscroll-behavior: none; }
+  body { margin:0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; touch-action: manipulation; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+  * { -webkit-tap-highlight-color: transparent; }
+  button, .picker-row, .day-cell, .wd-cell, .color-swatch, .reminder-chip, .timeline-event, .fab, .fab-secondary { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  button { transition: opacity .1s ease, transform .1s ease; }
+  button:active, .picker-row:active, .day-cell:active { opacity:.7; }
   .app { max-width: 720px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom)); position:relative; }
   .cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; }
   .cal-header .nav-btn { background:none; border:none; color: var(--ink); font-size:20px; padding:6px 10px; cursor:pointer; }
@@ -1382,6 +1387,32 @@ document.getElementById("dayViewAdd").addEventListener("click", () => openAdd())
       // RTL layout: swipe right-to-left = next day, swipe left-to-right = previous day
       selectedDate = isoAddDays(selectedDate, dx > 0 ? 1 : -1);
       const [y,m] = selectedDate.split("-").map(Number);
+      viewYear = y; viewMonth = m;
+      renderAgenda();
+    }
+  }, { passive: true });
+})();
+
+// Swipe left-to-right on the week strip to jump to next week's first day;
+// swipe right-to-left to jump to previous week's last day.
+(function() {
+  let touchStartX = null, touchStartY = null;
+  const strip = document.getElementById("weekStrip");
+  strip.addEventListener("touchstart", (e) => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  strip.addEventListener("touchend", (e) => {
+    if (touchStartX === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    touchStartX = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      const weekStart = startOfWeekIso(selectedDate);
+      selectedDate = dx > 0
+        ? isoAddDays(weekStart, 7)   // left-to-right: next week's first day
+        : isoAddDays(weekStart, -1); // right-to-left: previous week's last day
+      const [y, m] = selectedDate.split("-").map(Number);
       viewYear = y; viewMonth = m;
       renderAgenda();
     }
