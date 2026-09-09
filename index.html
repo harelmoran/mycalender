@@ -172,7 +172,7 @@
   .day-view-content { flex:1; overflow-y:auto; overscroll-behavior: contain; padding: 0 0 calc(20px + env(safe-area-inset-bottom)); touch-action: pan-y; }
   .allday-chips-row { display:flex; flex-wrap:wrap; gap:6px; margin: 0 16px 8px; }
   .allday-chip { font-size:12px; font-weight:700; padding:5px 10px; border-radius:8px; color:#fff; }
-  .timeline-wrap { position:relative; height: 1440px; margin: 0 16px; transition: opacity .12s ease; touch-action: none; }
+  .timeline-wrap { position:relative; height: 1440px; margin: 0 16px; transition: opacity .12s ease; touch-action: pan-y; }
   .anim-next { animation: slideInLeft .22s ease; }
   .anim-prev { animation: slideInRight .22s ease; }
   @keyframes slideInLeft { from { transform: translateX(24px); opacity:0; } to { transform:none; opacity:1; } }
@@ -1511,25 +1511,24 @@ function startMomentumScroll(scrollEl, velocity) {
 }
 (function() {
   let pressTimer = null;
-  let armStartY = null, armStartX = null, armPointerId = null;
-  let lastMoveY = null, lastMoveT = 0, velocity = 0;
-  let manualScrolling = false, scrollRafPending = false, pendingScrollDelta = 0;
+  let armStartY = null, armStartX = null, armPointerId = null, armScrollTop = 0;
   const wrap = document.getElementById("timelineWrap");
   const scrollEl = document.getElementById("dayViewContent");
   const cancelPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+  // If native scrolling kicks in at all while we're waiting on the long-press
+  // timer, bail immediately — this is what stops a scroll gesture from ever
+  // being misread as "hold still to create an event".
+  scrollEl.addEventListener("scroll", () => { if (pressTimer) cancelPress(); }, { passive: true });
 
   wrap.addEventListener("pointerdown", (ev) => {
-    stopMomentumScroll();
     if (ev.target.closest(".timeline-event") || ev.target.closest("#eventContextMenu")) return;
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
     armStartY = ev.clientY; armStartX = ev.clientX; armPointerId = ev.pointerId;
-    lastMoveY = ev.clientY;
-    lastMoveT = performance.now();
-    velocity = 0;
-    manualScrolling = false;
+    armScrollTop = scrollEl.scrollTop;
     cancelPress();
     pressTimer = setTimeout(() => {
       pressTimer = null;
+      if (scrollEl.scrollTop !== armScrollTop) return; // the page moved under us — this was a scroll, not a hold
       const rect = wrap.getBoundingClientRect();
       const offsetY = armStartY - rect.top;
       let minutes = Math.round((offsetY / HOUR_H * 60) / 30) * 30;
@@ -1548,43 +1547,15 @@ function startMomentumScroll(scrollEl, velocity) {
       if (navigator.vibrate) navigator.vibrate(8);
     }, DRAG_LONG_PRESS_MS);
   });
-  // The timeline has touch-action:none (see below for why), so plain
-  // scrolling no longer happens natively — replicate it manually here
-  // (batched via rAF to stay smooth, with momentum on release) whenever the
-  // touch isn't an active long-press.
+  // Scrolling itself is left entirely to the browser now (smooth, native,
+  // with its own momentum) — we only watch for enough movement to know the
+  // long-press attempt should be cancelled.
   wrap.addEventListener("pointermove", (ev) => {
     if (createSession) return; // handled at document level below
-    ev.preventDefault();
-    const now = performance.now();
-    const dy = ev.clientY - lastMoveY;
-    const dt = now - lastMoveT;
-    if (dt > 0) {
-      const instantV = dy / dt; // px/ms
-      velocity = velocity * 0.7 + instantV * 0.3; // smooth out jitter between samples
-    }
-    lastMoveY = ev.clientY;
-    lastMoveT = now;
-    if (pressTimer && (Math.abs(ev.clientY - armStartY) > 8 || Math.abs(ev.clientX - armStartX) > 8)) {
-      cancelPress();
-      manualScrolling = true;
-    }
-    if (!manualScrolling || !scrollEl) return;
-    pendingScrollDelta += dy;
-    if (scrollRafPending) return;
-    scrollRafPending = true;
-    requestAnimationFrame(() => {
-      scrollRafPending = false;
-      scrollEl.scrollTop -= pendingScrollDelta;
-      pendingScrollDelta = 0;
-    });
+    if (pressTimer && (Math.abs(ev.clientY - armStartY) > 8 || Math.abs(ev.clientX - armStartX) > 8)) cancelPress();
   });
-  const finishScroll = () => {
-    cancelPress();
-    if (manualScrolling && scrollEl && Math.abs(velocity) > 0.05) startMomentumScroll(scrollEl, velocity);
-    manualScrolling = false;
-  };
-  wrap.addEventListener("pointerup", finishScroll);
-  wrap.addEventListener("pointercancel", finishScroll);
+  wrap.addEventListener("pointerup", cancelPress);
+  wrap.addEventListener("pointercancel", cancelPress);
 })();
 
 document.addEventListener("pointermove", (ev) => {
