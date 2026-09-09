@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="יומן">
 <meta name="theme-color" content="#1B2028">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>יומן</title>
 <style>
   :root {
@@ -2830,6 +2833,12 @@ document.getElementById("sendEmailBtn").addEventListener("click", async () => {
     btn.textContent = original; btn.disabled = false;
   }
 });
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
