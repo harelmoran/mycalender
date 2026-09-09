@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "il.co.micu.mycalender.twa",
+        "sha256_cert_fingerprints": ["B3:C4:D1:DE:4E:B0:1F:57:7C:23:E0:DA:BA:44:70:90:DD:94:D2:C3:C8:C6:06:C4:53:8C:8C:5F:29:8B:AD:64"]
+      }
+    }]
