@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="he" dir="rtl">
+<html lang="he" dir="rtl" style="background:#12151c;">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -87,7 +87,7 @@
   @keyframes overlayFadeOut { from { background:rgba(0,0,0,.6); } to { background:rgba(0,0,0,0); } }
   @keyframes modalSlideUp { from { transform: translateY(40px); opacity:0; } to { transform:none; opacity:1; } }
   @keyframes modalSlideDown { from { transform:none; opacity:1; } to { transform: translateY(40px); opacity:0; } }
-  .modal { background: var(--surface); width:100%; max-width:720px; border-radius:18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); max-height:90vh; overflow-y:auto; overscroll-behavior: contain; }
+  .modal { background: var(--surface); width:100%; max-width:720px; border-radius:18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); max-height:60vh; overflow-y:auto; overscroll-behavior: contain; }
   .modal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; touch-action:none; }
   .modal-drag-handle { width:40px; height:5px; background: var(--surface2); border-radius:3px; margin:0 auto 14px; touch-action:none; }
   .modal-head h2 { margin:0; font-size:18px; }
@@ -208,7 +208,7 @@
   .now-line .now-dot { position:absolute; right:-5px; top:-5px; width:10px; height:10px; border-radius:50%; background: var(--danger); }
 </style>
 </head>
-<body>
+<body style="background:#12151c;">
 <div class="app">
   <button class="user-icon-btn" id="googleBtn" title="חיבור ל-Google Calendar">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.9-2.2 4.9-4.9S14.7 2.2 12 2.2 7.1 4.4 7.1 7.1 9.3 12 12 12zm0 2.5c-3.3 0-9.8 1.6-9.8 4.9v1.2c0 .7.5 1.2 1.2 1.2h17.2c.7 0 1.2-.5 1.2-1.2v-1.2c0-3.3-6.5-4.9-9.8-4.9z"/></svg>
