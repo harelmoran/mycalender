@@ -2011,7 +2011,11 @@ document.getElementById("formOverlay").addEventListener("click", (e) => { if (e.
 
 function openInMaps(loc) {
   if (!loc) return;
-  window.open("https://maps.apple.com/?q=" + encodeURIComponent(loc), "_blank");
+  // Use Apple's native URL scheme (not the https:// universal link) so a
+  // standalone home-screen app hands off cleanly to the real Maps app —
+  // https:// links inside a standalone web app can get stuck showing an
+  // embedded browser sheet instead of switching apps.
+  window.location.href = "maps://?q=" + encodeURIComponent(loc);
 }
 document.getElementById("openMapBtn").addEventListener("click", () => {
   openInMaps(document.getElementById("formLocation").value.trim());
