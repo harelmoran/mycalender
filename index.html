@@ -68,7 +68,7 @@
   .agenda-head { display:flex; align-items:center; justify-content:space-between; margin: 18px 0 8px; }
   .day-view-overlay .agenda-head { margin: 2px 16px 8px; }
   .agenda-head h2 { font-size:15px; margin:0; }
-  .event-item { display:flex; align-items:center; gap:10px; background: var(--surface); border:1px solid var(--surface2); border-radius:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer; }
+  .event-item { display:flex; align-items:center; gap:10px; background: var(--surface); border:1px solid var(--surface2); border-radius:12px; padding:12px 14px; margin-bottom:8px; cursor:pointer; position:relative; }
   .event-color-bar { width:4px; align-self:stretch; border-radius:4px; flex-shrink:0; }
   .event-time { font-size:12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width:52px; }
   .event-title { font-size:14px; font-weight:700; flex:1; }
@@ -189,6 +189,8 @@
   .timeline-event.dragging { opacity:.97; box-shadow:0 10px 26px rgba(0,0,0,.55); z-index:6; transition:none; filter:brightness(1.12) saturate(1.25); transform:scale(1.035); }
   .timeline-event.edit-mode { outline: 2px solid #fff; outline-offset:1px; z-index:6; filter:brightness(1.08) saturate(1.15); box-shadow:0 6px 18px rgba(0,0,0,.4); transition: filter .15s ease, box-shadow .15s ease; }
   .te-handle { position:absolute; left:50%; transform:translateX(50%); width:34px; height:18px; background:#fff; border-radius:9px; box-shadow:0 2px 6px rgba(0,0,0,.5); touch-action:none; z-index:7; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  .secondary-cat-dots { position:absolute; left:6px; bottom:4px; display:flex; gap:4px; }
+  .secondary-cat-dot { width:11px; height:11px; border-radius:50%; box-shadow:0 0 0 1.5px rgba(0,0,0,.35); }
   .te-handle::after { content:""; position:absolute; left:50%; top:50%; width:16px; height:3px; background:#8a8f99; border-radius:2px; transform:translate(50%,-50%); }
   .te-handle-top { top:-9px; }
   .te-handle-bottom { bottom:-9px; }
@@ -822,6 +824,7 @@ function renderMonthAgenda() {
         <div class="event-title">${escapeHtml(e.title)}</div>
         ${e.location ? `<div class="event-location" data-loc="${escapeHtml(e.location)}">📍 ${escapeHtml(e.location)}</div>` : ""}
       </div>
+      ${secondaryCategoryDotsHtml(e)}
     </div>
   `).join("");
   wrap.querySelectorAll(".event-item").forEach(item => {
@@ -900,6 +903,15 @@ function renderTimelineGrid() {
 
 let editModeEventId = null;
 
+function secondaryCategoryDotsHtml(e) {
+  const ids = (e.categoryIds || []).slice(0, -1); // everyone except the primary (last)
+  if (!ids.length) return "";
+  const cats = getCategories();
+  return `<div class="secondary-cat-dots">` + ids.map(id => {
+    const cat = cats.find(c => c.id === id);
+    return `<span class="secondary-cat-dot" style="background:${cat ? colorValue(cat.color) : "#888"};"></span>`;
+  }).join("") + `</div>`;
+}
 function renderTimelineEvents(timedEvents) {
   removeEventContextMenu(); // any previous render's leftover menu is now stale no matter how we got here
   const wrap = document.getElementById("timelineEvents");
@@ -934,6 +946,7 @@ function renderTimelineEvents(timedEvents) {
       <div class="te-title" style="color:${textColor};">${escapeHtml(e.title)}</div>
       <div class="te-time" style="color:${textColor}; opacity:.85;">${segmentLabel(e, selectedDate)}</div>
       ${e.location && height > 40 ? `<div class="te-time te-location" style="color:${textColor}; opacity:.85;" data-loc="${escapeHtml(e.location)}">📍 ${escapeHtml(e.location)}</div>` : ""}
+      ${secondaryCategoryDotsHtml(e)}
       ${editable ? `<div class="te-handle te-handle-top" data-handle="start"></div><div class="te-handle te-handle-bottom" data-handle="end"></div>` : ""}
     </div>`;
   }).join("");
@@ -1623,42 +1636,71 @@ document.getElementById("formDate").addEventListener("change", () => {
 });
 
 let selectedCategoryId = "gold";
+let selectedCategoryIds = ["gold"]; // ordered; last = primary
 function selectCategory(id) {
+  // used for initialization (openAdd/openEdit) with a single starting category
+  selectedCategoryIds = [id];
+  updateCategoryRowDisplay();
+}
+function updateCategoryRowDisplay() {
   const cats = getCategories();
-  const cat = cats.find(c => c.id === id) || cats[0];
-  selectedCategoryId = cat.id;
-  selectedColor = cat.color;
-  document.getElementById("categoryRowDot").style.background = colorValue(cat.color);
-  document.getElementById("categoryRowText").textContent = cat.name;
+  const primaryId = selectedCategoryIds[selectedCategoryIds.length - 1];
+  const primary = cats.find(c => c.id === primaryId) || cats[0];
+  selectedCategoryId = primary.id;
+  selectedColor = primary.color;
+  document.getElementById("categoryRowDot").style.background = colorValue(primary.color);
+  const extra = selectedCategoryIds.length - 1;
+  document.getElementById("categoryRowText").textContent = primary.name + (extra > 0 ? ` +${extra}` : "");
 }
 let categoryPickerContext = "form"; // "form" or "view"
 function renderCategoryPickerList() {
   const cats = getCategories();
   const list = document.getElementById("categoryPickerList");
-  const currentId = categoryPickerContext === "view"
-    ? (events.find(x => x.id === viewingId) || {}).categoryId
-    : selectedCategoryId;
-  list.innerHTML = cats.map(c => `<div class="picker-row category-picker-item" data-id="${c.id}">
+  const viewEv = categoryPickerContext === "view" ? events.find(x => x.id === viewingId) : null;
+  const activeIds = categoryPickerContext === "view"
+    ? ((viewEv && (viewEv.categoryIds || (viewEv.categoryId ? [viewEv.categoryId] : []))) || [])
+    : selectedCategoryIds;
+  const primaryId = activeIds[activeIds.length - 1];
+  list.innerHTML = cats.map(c => {
+    const order = activeIds.indexOf(c.id);
+    const isSelected = order >= 0;
+    const isPrimary = c.id === primaryId;
+    let marker = "";
+    if (isPrimary) marker = "★ ראשי";
+    else if (isSelected) marker = "✓ " + (order + 1);
+    return `<div class="picker-row category-picker-item" data-id="${c.id}"${isPrimary ? ' style="background:var(--surface2); border-radius:10px;"' : ""}>
       <span class="picker-row-label"><span class="picker-color-dot" style="background:${colorValue(c.color)}; display:inline-block; margin-left:8px; vertical-align:middle;"></span>${escapeHtml(c.name)}</span>
-      <span style="color:var(--gold); font-weight:800;">${c.id === currentId ? "✓" : ""}</span>
-    </div>`).join("");
+      <span style="color:var(--gold); font-weight:800; font-size:12px;">${marker}</span>
+    </div>`;
+  }).join("");
   list.querySelectorAll(".category-picker-item").forEach(item => {
     item.addEventListener("click", () => {
+      const id = item.dataset.id;
       if (categoryPickerContext === "view") {
         const ev_ = events.find(x => x.id === viewingId);
-        if (ev_) {
-          const cat = getCategories().find(c => c.id === item.dataset.id);
-          ev_.categoryId = item.dataset.id;
-          ev_.color = cat ? cat.color : ev_.color;
-          persist();
-          pushUpdateToGoogle(ev_);
-          renderAgenda();
-          openView(viewingId);
-        }
+        if (!ev_) return;
+        let ids = (ev_.categoryIds || (ev_.categoryId ? [ev_.categoryId] : [])).slice();
+        const idx = ids.indexOf(id);
+        if (idx >= 0) ids.splice(idx, 1); else ids.push(id);
+        if (!ids.length) ids = [getDefaultCategoryId()];
+        ev_.categoryIds = ids;
+        ev_.categoryId = ids[ids.length - 1];
+        const primary = getCategories().find(c => c.id === ev_.categoryId);
+        ev_.color = primary ? primary.color : ev_.color;
+        persist();
+        pushUpdateToGoogle(ev_);
+        renderAgenda();
+        renderCategoryPickerList(); // keep the picker open for more selections
+        openView(viewingId);
       } else {
-        selectCategory(item.dataset.id);
+        let ids = selectedCategoryIds.slice();
+        const idx = ids.indexOf(id);
+        if (idx >= 0) ids.splice(idx, 1); else ids.push(id);
+        if (!ids.length) ids = [getDefaultCategoryId()];
+        selectedCategoryIds = ids;
+        updateCategoryRowDisplay();
+        renderCategoryPickerList(); // keep the picker open for more selections
       }
-      hideOverlay("categoryPickerOverlay");
     });
   });
 }
@@ -1904,7 +1946,8 @@ function openEdit(id) {
   document.getElementById("formEmailTo").value = "";
   document.getElementById("formError").style.display = "none";
   document.getElementById("formDelete").style.display = "block";
-  selectCategory(e.categoryId || e.color || "gold");
+  selectedCategoryIds = (e.categoryIds && e.categoryIds.length) ? e.categoryIds.slice() : [e.categoryId || e.color || "gold"];
+  updateCategoryRowDisplay();
   setSelectedReminders(e.reminders || []);
   // Fresh drafts (created via long-press on empty timeline, title still
   // empty) are effectively a "new event" — offer the paste suggestion here
@@ -2167,11 +2210,11 @@ document.getElementById("formSubmit").addEventListener("click", () => {
     const e = events.find(x => x.id === editingId);
     e.title = title; e.date = date; e.endDate = endDate; e.allDay = allDay;
     e.startTime = allDay ? "" : startTime; e.endTime = allDay ? "" : endTime;
-    e.notes = notes; e.color = selectedColor; e.categoryId = selectedCategoryId; e.location = location; e.reminders = selectedReminders.slice();
+    e.notes = notes; e.color = selectedColor; e.categoryId = selectedCategoryId; e.categoryIds = selectedCategoryIds.slice(); e.location = location; e.reminders = selectedReminders.slice();
     persist();
     pushUpdateToGoogle(e);
   } else {
-    const newEvent = { id: uid(), title, date, endDate, allDay, startTime: allDay?"":startTime, endTime: allDay?"":endTime, notes, location, color: selectedColor, categoryId: selectedCategoryId, reminders: selectedReminders.slice(), createdAt: Date.now() };
+    const newEvent = { id: uid(), title, date, endDate, allDay, startTime: allDay?"":startTime, endTime: allDay?"":endTime, notes, location, color: selectedColor, categoryId: selectedCategoryId, categoryIds: selectedCategoryIds.slice(), reminders: selectedReminders.slice(), createdAt: Date.now() };
     events.push(newEvent);
     persist();
     pushCreateToGoogle(newEvent);
